@@ -68,7 +68,7 @@ void MPU9250Device::i2cWriteRegister(std::vector<uint8_t> const &a_data)
     std::cerr << "[MPU9250] Failed to write on I2C bus: Input size 0." << std::endl;
   }
   uint8_t* buffer = (uint8_t *) a_data.data();
-  if (write(m_deviceFile, buffer, a_data.size()) != static_cast<uint32_t>(a_data.size())) {
+  if (write(m_deviceFile, buffer, a_data.size()) != a_data.size()) {
     std::cerr << "[MPU9250] Failed to write on I2C bus: Failed to communicate." << std::endl;
   }
 }
