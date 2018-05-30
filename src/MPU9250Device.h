@@ -78,7 +78,9 @@ class MPU9250Device{
   int16_t m_deviceFile;
   std::string m_addressType;
   std::vector<uint8_t> m_instrumentAdress;
-  std::string m_calibrationFile;
+  std::string m_accCalFile;
+  std::string m_gyroCalFile;
+  std::string m_magCalFile;
 
   float const ACCEL_SENSITIVITY = 16384; // = 16384 LSB/g
   float const GYRO_SENSITIVITY  = 131;   // = 131 LSB/degrees/sec

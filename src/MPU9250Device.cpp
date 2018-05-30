@@ -36,7 +36,9 @@ MPU9250Device::MPU9250Device(std::string const &a_deviceName)
     : m_deviceFile()
     , m_addressType()
     , m_instrumentAdress()
-    , m_calibrationFile("gyro_calibration.cal")
+    , m_accCalFile("acc.cal")
+    , m_gyroCalFile("gyro.cal")
+    , m_magCalFile("mag.cal")
     , m_gscale(MPU9250Device::G_SCALE::GFS_250DPS)
     , m_ascale(MPU9250Device::A_SCALE::AFS_2G)
     , m_mscale(MPU9250Device::M_SCALE::MFS_14BITS)
@@ -44,18 +46,19 @@ MPU9250Device::MPU9250Device(std::string const &a_deviceName)
 {
   m_deviceFile = open(a_deviceName.c_str(), O_RDWR);
   if (m_deviceFile < 0) {
-    std::cerr << "[MPU9250] Failed to open the i2c bus." << std::endl;
+    std::cerr << "[MPU9250] Failed to open the i2c bus:" << a_deviceName 
+        << "." << std::endl;
   } else {
     std::cout << "[MPU9250] I2C bus " << a_deviceName 
         << " opened successfully." << std::endl;
   }
   initialiseMpu();
-  std::vector<float> gyroBiasVec = loadGyroCalibrationFile();
-  if (gyroBiasVec.empty()) {
-    gyroBiasVec = calibrateMPU9250();
-    setGyroOffset(gyroBiasVec); 
-    saveGyroCalibrationFile(gyroBiasVec);
-  }
+  // std::vector<float> gyroBiasVec = loadGyroCalibrationFile();
+  // if (gyroBiasVec.empty()) {
+  //   gyroBiasVec = calibrateMPU9250();
+  //   setGyroOffset(gyroBiasVec); 
+  //   saveGyroCalibrationFile(gyroBiasVec);
+  // }
 }
 
 
@@ -98,14 +101,17 @@ void MPU9250Device::initialiseMpu()
   // Clear sleep mode bit (6), enable all sensors
   uint8_t addr = MPU9250_ADDRESS;
   i2cAccessDevice(addr);
-  // uint8_t reg = MPU9250::PWR_MGMT_1;
-  i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1,0x00});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1, 0x01<<7});
   usleep(100000); // Wait for all registers to reset
 
   // Get stable time source
   // Auto select clock source to be PLL gyroscope reference if ready else
-  i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1,0x01});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1, 0x01<<7});
   usleep(200000);
+
+  if (i2cReadRegister(std::vector<uint8_t>{MPU9250::WHO_AM_I_MPU9250}, 1).at(0) != 0x71) {
+    std::cerr << "[MPU9250] Wrong who am I code returned. " << std::endl;
+  }
 
   // Configure Gyro and Thermometer
   // Disable FSYNC and set thermometer and gyro bandwidth to 41 and 42 Hz,
@@ -116,13 +122,13 @@ void MPU9250Device::initialiseMpu()
   // With the MPU9250, it is possible to get gyro sample rates of 32 kHz (!),
   // 8 kHz, or 1 kHz
   // reg = MPU9250::CONFIG;
-  i2cWriteRegister(std::vector<uint8_t>{MPU9250::CONFIG,0x03});
+  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::CONFIG, 0x03});
 
   // Set sample rate = gyroscope output rate/(1 + SMPLRT_DIV)
   // Use a 200 Hz rate; a rate consistent with the filter update rate
   // determined inset in CONFIG above.
   // reg = MPU9250::SMPLRT_DIV;
-  i2cWriteRegister(std::vector<uint8_t>{MPU9250::SMPLRT_DIV, 0x04});
+  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::SMPLRT_DIV, 0x04});
 
   // Set gyroscope full scale range
   // Range selects FS_SEL and AFS_SEL are 0 - 3, so 2-bit values are
@@ -132,26 +138,26 @@ void MPU9250Device::initialiseMpu()
   // uint8_t c;
   // reg = MPU9250::GYRO_CONFIG;
   // i2cReadRegister(reg, &c, 1);
-  std::vector<uint8_t> c = i2cReadRegister(std::vector<uint8_t>{MPU9250::GYRO_CONFIG}, 1);
+  // std::vector<uint8_t> c = i2cReadRegister(std::vector<uint8_t>{MPU9250::GYRO_CONFIG}, 1);
   // c = c & ~0xE0; // Clear self-test bits [7:5]
-  c[0] = c[0] & ~0x02; // Clear Fchoice bits [1:0]
-  c[0] = c[0] & ~0x18; // Clear AFS bits [4:3]
-  c[0] = c[0] | m_gscale << 3; // Set full scale range for the gyro
+  // c[0] = c[0] & ~0x02; // Clear Fchoice bits [1:0]
+  // c[0] = c[0] & ~0x18; // Clear AFS bits [4:3]
+  // c[0] = c[0] | m_gscale << 3; // Set full scale range for the gyro
   // Set Fchoice for the gyro to 11 by writing its inverse to bits 1:0 of
   // GYRO_CONFIG
   // c =| 0x00;
   // Write new GYRO_CONFIG value to register
-  i2cWriteRegister(std::vector<uint8_t>{MPU9250::GYRO_CONFIG, c[0]});
+  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::GYRO_CONFIG, c[0]});
 
   // Set accelerometer full-scale range configuration
   // Get current ACCEL_CONFIG register value
   // reg = MPU9250::ACCEL_CONFIG;
-  c = i2cReadRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG}, 1);
+  // c = i2cReadRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG}, 1);
   // c = c & ~0xE0; // Clear self-test bits [7:5]
-  c[0] = c[0] & ~0x18;  // Clear AFS bits [4:3]
-  c[0] = c[0] | m_ascale << 3; // Set full scale range for the accelerometer
+  // c[0] = c[0] & ~0x18;  // Clear AFS bits [4:3]
+  // c[0] = c[0] | m_ascale << 3; // Set full scale range for the accelerometer
   // Write new ACCEL_CONFIG register value
-  i2cWriteRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG, c[0]});
+  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG, c[0]});
 
   // Set accelerometer sample rate configuration
   // It is possible to get a 4 kHz sample rate from the accelerometer by
@@ -159,11 +165,11 @@ void MPU9250Device::initialiseMpu()
   // 1.13 kHz
   // Get current ACCEL_CONFIG2 register value
   // reg = MPU9250::ACCEL_CONFIG2;
-  c = i2cReadRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG2}, 1);
-  c[0] = c[0] & ~0x0F; // Clear accel_fchoice_b (bit 3) and A_DLPFG (bits [2:0])
-  c[0] = c[0] | 0x03;  // Set accelerometer rate to 1 kHz and bandwidth to 41 Hz
+  // c = i2cReadRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG2}, 1);
+  // c[0] = c[0] & ~0x0F; // Clear accel_fchoice_b (bit 3) and A_DLPFG (bits [2:0])
+  // c[0] = c[0] | 0x03;  // Set accelerometer rate to 1 kHz and bandwidth to 41 Hz
   // Write new ACCEL_CONFIG2 register value
-  i2cWriteRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG2, c[0]});
+  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG2, c[0]});
   // The accelerometer, gyro, and thermometer are set to 1 kHz sample rates,
   // but all these rates are further reduced by a factor of 5 to 200 Hz because
   // of the SMPLRT_DIV setting
@@ -174,11 +180,11 @@ void MPU9250Device::initialiseMpu()
   // I2C_BYPASS_EN so additional chips can join the I2C bus and all can be
   // controlled by the Arduino as master.
   // reg = MPU9250::INT_PIN_CFG;
-  i2cWriteRegister(std::vector<uint8_t>{MPU9250::INT_PIN_CFG, 0x22});
+  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::INT_PIN_CFG, 0x22});
   // Enable data ready (bit 0) interrupt
   // reg = MPU9250::INT_ENABLE;
-  i2cWriteRegister(std::vector<uint8_t>{MPU9250::INT_ENABLE, 0x01});
-  usleep(100000);
+  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::INT_ENABLE, 0x01});
+  // usleep(100000);
 }
 
 
@@ -290,12 +296,12 @@ int8_t MPU9250Device::saveGyroCalibrationFile(std::vector<float> a_offset)
     return -1;
   }
 
-  std::ofstream gyroCalibrationFile(m_calibrationFile);
+  std::ofstream gyroCalibrationFile(m_gyroCalFile);
   if (gyroCalibrationFile.is_open()) {
     std::cout << "[MPU9250] Saved gyro cal:" << a_offset.at(0) << "\n" << a_offset.at(1) << "\n" << a_offset.at(2) << "\n";
     gyroCalibrationFile << a_offset.at(0) << "\n" << a_offset.at(1) << "\n" << a_offset.at(2) << "\n";
   } else {
-    std::cout << "[MPU9250] Unable to save calibration file. Tried to open: " + m_calibrationFile + "\n";
+    std::cout << "[MPU9250] Unable to save calibration file. Tried to open: " + m_gyroCalFile + "\n";
     return -1;
   }
   gyroCalibrationFile.flush();
@@ -306,7 +312,7 @@ int8_t MPU9250Device::saveGyroCalibrationFile(std::vector<float> a_offset)
 std::vector<float> MPU9250Device::loadGyroCalibrationFile() 
 {
   std::vector<float> gyroAvg;
-  std::ifstream file(m_calibrationFile, std::ifstream::in);
+  std::ifstream file(m_gyroCalFile, std::ifstream::in);
   if (file.is_open()){
     std::string line;
     for (uint8_t i = 0; i < 3; ++i) {
@@ -328,7 +334,7 @@ std::vector<float> MPU9250Device::loadGyroCalibrationFile()
     file.close();
     return gyroAvg;
   } else {
-    std::cout << "[MPU9250] Could not load the calibration settings. Tried to open: " + m_calibrationFile
+    std::cout << "[MPU9250] Could not load the calibration settings. Tried to open: " + m_gyroCalFile
         << std::endl;
     file.close();
     return {};
