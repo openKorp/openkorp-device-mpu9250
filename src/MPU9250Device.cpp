@@ -248,7 +248,7 @@ std::vector<float> MPU9250Device::getGyroCalibration()
 
     i2cWriteRegister(std::vector<uint8_t>{MPU9250::USER_CTRL, 0x40});
     i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, MPU9250::FIFO_GYRO_X_EN | MPU9250::FIFO_GYRO_Y_EN | MPU9250::FIFO_GYRO_Z_EN});
-    usleep(400000);
+    usleep(4000000);
 
     i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, 0x00});
     
@@ -312,7 +312,7 @@ void MPU9250Device::saveGyroCalibration(std::vector<float> a_offset)
 
   std::ofstream gyroCalibrationFile(m_gyroCalFile);
   if (gyroCalibrationFile.is_open()) {
-    std::cout << "[MPU9250] Saved gyro cal:" << a_offset.at(0) << "\n" << a_offset.at(1) << "\n" << a_offset.at(2) << "\n";
+    std::cout << "[MPU9250] Saved gyro cal:" << a_offset.at(0) << ", " << a_offset.at(1) << ", " << a_offset.at(2) << "." << std::endl;;
     gyroCalibrationFile << a_offset.at(0) << "\n" << a_offset.at(1) << "\n" << a_offset.at(2) << "\n";
   } else {
     std::cout << "[MPU9250] Unable to save calibration file. Tried to open: " + m_gyroCalFile + "\n";
