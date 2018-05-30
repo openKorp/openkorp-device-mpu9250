@@ -259,7 +259,7 @@ std::vector<float> MPU9250Device::getGyroCalibration()
     std::cout << "[MPU9250] FIFO Count: " << fifoCount << std::endl;
     int32_t sampleCount = fifoCount/6;
     std::cout << "[MPU9250] Sample Count: " << sampleCount << std::endl;
-    
+
     Eigen::VectorXf x = Eigen::VectorXf::Zero(sampleCount);
     Eigen::VectorXf y = Eigen::VectorXf::Zero(sampleCount);
     Eigen::VectorXf z = Eigen::VectorXf::Zero(sampleCount);
@@ -272,7 +272,7 @@ std::vector<float> MPU9250Device::getGyroCalibration()
 
       x(i) = (int16_t) (((int16_t)rawData.at(0) << 8) | rawData.at(1));
       y(i) = (int16_t) (((int16_t)rawData.at(2) << 8) | rawData.at(3));
-      z(i) = (int16_t) (((int16_t)rawData.at(3) << 8) | rawData.at(5));
+      z(i) = (int16_t) (((int16_t)rawData.at(4) << 8) | rawData.at(5));
 
     }
     xBias = x.mean();
