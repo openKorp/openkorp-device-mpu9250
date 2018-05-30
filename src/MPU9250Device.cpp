@@ -55,8 +55,8 @@ MPU9250Device::MPU9250Device(std::string const &a_deviceName, bool const &a_cali
         << " opened successfully." << std::endl;
   }
   if (a_calibrate) {
-    getGyroCalibration();
-
+    std::vector<float> gyroCal = getGyroCalibration();
+    saveGyroCalibration(gyroCal);
   } else {
     initMpu();
   }
@@ -236,50 +236,71 @@ std::vector<float> MPU9250Device::getGyroCalibration()
   
   // float const gyroSens  = (250.0f / 32768.0f * static_cast<float>(M_PI) / 180.0f);
 
-  i2cWriteRegister(std::vector<uint8_t>{MPU9250::USER_CTRL, 0x40});
-  i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, MPU9250::FIFO_GYRO_X_EN | MPU9250::FIFO_GYRO_Y_EN | MPU9250::FIFO_GYRO_Z_EN});
-  usleep(400000);
+  bool calibrate = true;
 
-  i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, 0x00});
-  
-  rawData = i2cReadRegister(std::vector<uint8_t>{MPU9250::FIFO_COUNTH}, 2);
+  float xBias = 0;
+  float yBias = 0;
+  float zBias = 0;
 
-  uint16_t fifoCount = ((uint16_t) rawData.at(0) <<  8) | rawData.at(1);
+  while(calibrate){
+    float const DEVIATION_THRESHOLD = 50;
+    float const BIAS_THRESHOLD = 500;
 
-  std::cout << "[MPU9250] FIFO Count: " << fifoCount << std::endl;
-  uint16_t sampleCount = fifoCount/6;
-  std::cout << "[MPU9250] Sample Count: " << sampleCount << std::endl;
+    i2cWriteRegister(std::vector<uint8_t>{MPU9250::USER_CTRL, 0x40});
+    i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, MPU9250::FIFO_GYRO_X_EN | MPU9250::FIFO_GYRO_Y_EN | MPU9250::FIFO_GYRO_Z_EN});
+    usleep(400000);
 
-  // // int32_t accelBias[3] = {0,0,0};
-  // // std::vector<float> gyroBias;  
-  // int32_t gyroBias[3] = {0,0,0};
-  // for (uint8_t i = 0; i < packetCount; i++) {
-  //   int16_t gyroSampl[3] = {0,0,0};
-  //   i2cReadRegister(MPU9250::FIFO_R_W, &rawData[0], 12);
+    i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, 0x00});
+    
+    rawData = i2cReadRegister(std::vector<uint8_t>{MPU9250::FIFO_COUNTH}, 2);
 
-  //   gyroSampl[0]  = (int16_t) (((int16_t)rawData[6] << 8) | rawData[7]  );
-  //   gyroSampl[1]  = (int16_t) (((int16_t)rawData[8] << 8) | rawData[9]  );
-  //   gyroSampl[2]  = (int16_t) (((int16_t)rawData[10] << 8) | rawData[11]);
+    int16_t fifoCount = ((uint16_t) rawData.at(0) <<  8) | rawData.at(1);
 
-  //   gyroBias[0] += (int32_t) gyroSampl[0];
-  //   gyroBias[1] += (int32_t) gyroSampl[1];
-  //   gyroBias[2] += (int32_t) gyroSampl[2];
-  //   // std::cout << "[MPU9250] Gyro bias: " << gyroBias[0]/gyroSens << ", " << gyroBias[1]/gyroSens << ", " << gyroBias[2]/gyroSens << std::endl;
-  // }
+    std::cout << "[MPU9250] FIFO Count: " << fifoCount << std::endl;
+    int32_t sampleCount = fifoCount/6;
+    std::cout << "[MPU9250] Sample Count: " << sampleCount << std::endl;
+    
+    Eigen::VectorXf x = Eigen::VectorXf::Zero(sampleCount);
+    Eigen::VectorXf y = Eigen::VectorXf::Zero(sampleCount);
+    Eigen::VectorXf z = Eigen::VectorXf::Zero(sampleCount);
 
-  // gyroBias[0] /= packetCount;
-  // gyroBias[1] /= packetCount;
-  // gyroBias[2] /= packetCount;
+    // // std::vector<float> gyroBias;  
+    // int32_t gyroBias[3] = {0,0,0};
+    for (uint8_t i = 0; i < sampleCount; i++) {
+      // int16_t gyroSampl[3] = {0,0,0};
+      rawData = i2cReadRegister(std::vector<uint8_t>{MPU9250::FIFO_R_W}, 6);
 
-  
-  // // std::cout << "[MPU9250] Gyro bias: " << gyroBias.at(0) << ", " << gyroBias.at(1) << ", " << gyroBias.at(2) << std::endl;
-  // std::vector<float> gyroBiasVec;
-  // gyroBiasVec.push_back(gyroBias[0] * gyroSens);
-  // gyroBiasVec.push_back(gyroBias[1] * gyroSens);
-  // gyroBiasVec.push_back(gyroBias[2] * gyroSens);
-  // std::cout << "[MPU9250] Gyro bias: " << gyroBiasVec.at(0) << ", " << gyroBiasVec.at(1) << ", " << gyroBiasVec.at(2) << std::endl;
-  // return gyroBiasVec;
-  return std::vector<float>();
+      x(i) = (int16_t) (((int16_t)rawData.at(0) << 8) | rawData.at(1));
+      y(i) = (int16_t) (((int16_t)rawData.at(2) << 8) | rawData.at(3));
+      z(i) = (int16_t) (((int16_t)rawData.at(3) << 8) | rawData.at(5));
+
+    }
+    xBias = x.mean();
+    float xDeviation = std::sqrt(((x.array()-xBias).pow(2).sum()/(sampleCount-1)));
+    yBias = y.mean();
+    float yDeviation = std::sqrt(((y.array()-yBias).pow(2).sum()/(sampleCount-1)));
+    zBias = z.mean();
+    float zDeviation = std::sqrt(((z.array()-zBias).pow(2).sum()/(sampleCount-1)));
+    
+    calibrate = false;
+
+    if (xDeviation > DEVIATION_THRESHOLD || yDeviation > DEVIATION_THRESHOLD || zDeviation > DEVIATION_THRESHOLD) {
+      std::cout << "[MPU9250] Deviation too high: " << xDeviation << ", " 
+          << yDeviation << ", " << zDeviation << ".\n" 
+          << "Recalibrating..." << std::endl;
+      calibrate = true;
+    }
+    if(std::abs(xBias) > BIAS_THRESHOLD ||  std::abs(yBias) > BIAS_THRESHOLD ||  std::abs(zBias) > BIAS_THRESHOLD) {
+      std::cout << "[MPU9250] Bias too high: " << xBias << ", " 
+          << yBias << ", " << zBias << ".\n" 
+          << "Recalibrating..." << std::endl;
+      calibrate = true;
+    }
+        
+  }
+  std::cout << "[MPU9250] Gyro calibration successful, found bias: " << xBias << ", " 
+      << yBias << ", " << zBias << "." << std::endl;
+  return std::vector<float>{xBias, yBias, zBias};
 }
 
 
