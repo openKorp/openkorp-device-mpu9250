@@ -236,8 +236,7 @@ std::vector<float> MPU9250Device::getGyroCalibration()
 
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::USER_CTRL, 0x40});
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, MPU9250::FIFO_GYRO_X_EN | MPU9250::FIFO_GYRO_Y_EN | MPU9250::FIFO_GYRO_Z_EN});
-  // usleep(400000);
-
+  usleep(400000);
 
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, 0x00});
   
