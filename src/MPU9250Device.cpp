@@ -32,7 +32,7 @@
 /**
  * Constructor for MPU9250 device interfacing through I2C.
  */
-MPU9250Device::MPU9250Device(std::string const &a_deviceName)
+MPU9250Device::MPU9250Device(std::string const &a_deviceName, bool const &a_calibrate)
     : m_deviceFile()
     , m_addressType()
     , m_instrumentAdress()
@@ -52,13 +52,21 @@ MPU9250Device::MPU9250Device(std::string const &a_deviceName)
     std::cout << "[MPU9250] I2C bus " << a_deviceName 
         << " opened successfully." << std::endl;
   }
-  initialiseMpu();
-  // std::vector<float> gyroBiasVec = loadGyroCalibrationFile();
+  if (a_calibrate) {
+    getGyroCalibration();
+
+  } else {
+    initMpu();
+  }
+
+
+  // std::vector<float> gyroBiasVec = loadGyroCalibration();
   // if (gyroBiasVec.empty()) {
   //   gyroBiasVec = calibrateMPU9250();
   //   setGyroOffset(gyroBiasVec); 
   //   saveGyroCalibrationFile(gyroBiasVec);
   // }
+
 }
 
 
@@ -95,23 +103,22 @@ int8_t MPU9250Device::i2cAccessDevice(uint8_t const a_addr)
   return 0;
 }
 
-void MPU9250Device::initialiseMpu()
+void MPU9250Device::resetMpu()
 {
   // wake up device
   // Clear sleep mode bit (6), enable all sensors
   uint8_t addr = MPU9250_ADDRESS;
   i2cAccessDevice(addr);
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1, 0x01<<7});
-  usleep(100000); // Wait for all registers to reset
+  usleep(10000); // Wait for all registers to reset
 
-  // Get stable time source
-  // Auto select clock source to be PLL gyroscope reference if ready else
-  i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1, 0x01<<7});
-  usleep(200000);
 
   if (i2cReadRegister(std::vector<uint8_t>{MPU9250::WHO_AM_I_MPU9250}, 1).at(0) != 0x71) {
     std::cerr << "[MPU9250] Wrong who am I code returned. " << std::endl;
   }
+
+
+
 
   // Configure Gyro and Thermometer
   // Disable FSYNC and set thermometer and gyro bandwidth to 41 and 42 Hz,
@@ -187,48 +194,60 @@ void MPU9250Device::initialiseMpu()
   // usleep(100000);
 }
 
-
-std::vector<float> MPU9250Device::calibrateMPU9250()
+void MPU9250Device::initMpu()
 {
-  
-  // std::cout << "[MPU9250] Starting calibration...\n";
-  // uint8_t rawData[12];
-
-  // i2cAccessDevice(MPU9250_ADDRESS);
-
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1, 0x80});
-  // usleep(100000);
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1, 0x01});
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_2, 0x00});
-  // usleep(200000);
-
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::INT_ENABLE, 0x00});
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, 0x00});
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1, 0x00});
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::I2C_MST_CTRL, 0x00});
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::USER_CTRL, 0x00});
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::USER_CTRL, 0x0C});
-  // usleep(15000);
+  resetMpu();
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG2, MPU9250::BIT_FIFO_SIZE_1024 | 0x8});
 
 
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::CONFIG, 0x01});
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::SMPLRT_DIV, 0x00});
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::GYRO_CONFIG, 0x00});
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG, 0x00});
+}
+
+
+std::vector<float> MPU9250Device::getGyroCalibration()
+{
+  i2cAccessDevice(MPU9250_ADDRESS);
+  std::cout << "[MPU9250] Starting calibration...\n";
+  resetMpu();
+
+  std::vector<uint8_t> rawData;
+
+
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1, 0x01});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_2, 0x00});
+  usleep(200000);
+
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::INT_ENABLE, 0x00});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, 0x00});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1, 0x00});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::I2C_MST_CTRL, 0x00});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::USER_CTRL, 0x00});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::USER_CTRL, 0x0C});
+  usleep(15000);
+
+
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::CONFIG, 0x01});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::SMPLRT_DIV, 0x04});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::GYRO_CONFIG, 0x00});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG, 0x00});
+
+  //Settings done
   
   // float const gyroSens  = (250.0f / 32768.0f * static_cast<float>(M_PI) / 180.0f);
 
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::USER_CTRL, 0x40});
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, 0x78});
-  // usleep(40000);
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, 0x00});
-  
-  // i2cReadRegister(MPU9250::FIFO_COUNTH, &rawData[0], 2);
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::USER_CTRL, 0x40});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, MPU9250::FIFO_GYRO_X_EN | MPU9250::FIFO_GYRO_Y_EN | MPU9250::FIFO_GYRO_Z_EN});
+  // usleep(400000);
 
-  // uint16_t fifoCount = ((uint16_t) rawData[0] <<  8) | rawData[1];
-  // std::cout << "[MPU9250] FIFO Count: " << fifoCount << std::endl;
-  // uint16_t packetCount = fifoCount/12;
-  // std::cout << "[MPU9250] Packet Count: " << packetCount << std::endl;
+
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, 0x00});
+  
+  rawData = i2cReadRegister(std::vector<uint8_t>{MPU9250::FIFO_COUNTH}, 2);
+
+  uint16_t fifoCount = ((uint16_t) rawData.at(0) <<  8) | rawData.at(1);
+
+  std::cout << "[MPU9250] FIFO Count: " << fifoCount << std::endl;
+  uint16_t sampleCount = fifoCount/6;
+  std::cout << "[MPU9250] Sample Count: " << sampleCount << std::endl;
 
   // // int32_t accelBias[3] = {0,0,0};
   // // std::vector<float> gyroBias;  
@@ -262,7 +281,56 @@ std::vector<float> MPU9250Device::calibrateMPU9250()
   return std::vector<float>();
 }
 
-int8_t MPU9250Device::setGyroOffset(std::vector<float> a_offset)
+
+void MPU9250Device::saveGyroCalibration(std::vector<float> a_offset)
+{
+  if (a_offset.size() != 3) {
+    std::cerr << "[MPU9250] saveGyroCalibrationFile received a vector of a length not supported." << std::endl;
+  }
+
+  std::ofstream gyroCalibrationFile(m_gyroCalFile);
+  if (gyroCalibrationFile.is_open()) {
+    std::cout << "[MPU9250] Saved gyro cal:" << a_offset.at(0) << "\n" << a_offset.at(1) << "\n" << a_offset.at(2) << "\n";
+    gyroCalibrationFile << a_offset.at(0) << "\n" << a_offset.at(1) << "\n" << a_offset.at(2) << "\n";
+  } else {
+    std::cout << "[MPU9250] Unable to save calibration file. Tried to open: " + m_gyroCalFile + "\n";
+  }
+  gyroCalibrationFile.flush();
+  gyroCalibrationFile.close();
+}
+
+void MPU9250Device::loadGyroCalibration() 
+{
+  std::vector<float> gyroCal{0,0,0};
+  std::ifstream file(m_gyroCalFile, std::ifstream::in);
+  if (file.is_open()){
+    std::string line;
+    for (uint8_t i = 0; i < 3; ++i) {
+      std::getline(file, line);
+      try{
+        gyroCal.at(i) = std::stof(line);
+      } catch (std::invalid_argument e) {
+        std::cerr << "[MPU9250] Invalid calibration file format." << std::endl;
+        file.close();
+      }
+    }
+    std::cout << "[MPU9250] Loaded the calibration settings." << std::endl;
+    std::cout << "\nLoaded:"
+        << " Gyro: " << gyroCal.at(0) << ", " 
+        << gyroCal.at(1) << ", " 
+        << gyroCal.at(2) << std::endl;
+    file.close();
+  } else {
+    std::cout << "[MPU9250] Could not load the calibration settings. Tried to open: " 
+        << m_gyroCalFile << std::endl;
+    file.close();
+    std::cout << "[MPU9250] Calibrating the gyroscope instead..." << std::endl;
+    
+
+  }
+}
+
+void MPU9250Device::setGyroCalibration(std::vector<float> a_offset)
 {
   (void)a_offset;
   // if (a_offset.size() != 3) {
@@ -286,59 +354,6 @@ int8_t MPU9250Device::setGyroOffset(std::vector<float> a_offset)
   // i2cAccessDevice(MPU9250_ADDRESS);
   // i2cWriteRegister(std::vector<uint8_t>{MPU9250::XG_OFFSET_H, xh, xl, yh, yl, zh, zl});
   
-  return 0;
-}
-
-int8_t MPU9250Device::saveGyroCalibrationFile(std::vector<float> a_offset)
-{
-  if (a_offset.size() != 3) {
-    std::cerr << "[MPU9250] saveGyroCalibrationFile received a vector of a length not supported." << std::endl;
-    return -1;
-  }
-
-  std::ofstream gyroCalibrationFile(m_gyroCalFile);
-  if (gyroCalibrationFile.is_open()) {
-    std::cout << "[MPU9250] Saved gyro cal:" << a_offset.at(0) << "\n" << a_offset.at(1) << "\n" << a_offset.at(2) << "\n";
-    gyroCalibrationFile << a_offset.at(0) << "\n" << a_offset.at(1) << "\n" << a_offset.at(2) << "\n";
-  } else {
-    std::cout << "[MPU9250] Unable to save calibration file. Tried to open: " + m_gyroCalFile + "\n";
-    return -1;
-  }
-  gyroCalibrationFile.flush();
-  gyroCalibrationFile.close();
-  return 0;
-}
-
-std::vector<float> MPU9250Device::loadGyroCalibrationFile() 
-{
-  std::vector<float> gyroAvg;
-  std::ifstream file(m_gyroCalFile, std::ifstream::in);
-  if (file.is_open()){
-    std::string line;
-    for (uint8_t i = 0; i < 3; ++i) {
-      std::getline(file, line);
-      try{
-        gyroAvg.push_back(std::stof(line));
-      } catch (std::invalid_argument e) {
-        std::cout << "[MPU9250] Invalid calibration file format." << std::endl;
-        file.close();
-        return {};
-      }
-    }
-
-    std::cout << "[MPU9250] Loaded the calibration settings." << std::endl;
-    std::cout << "\nLoaded:"
-        << " Gyro: " << gyroAvg.at(0) << ", " 
-        << gyroAvg.at(1) << ", " 
-        << gyroAvg.at(2) << std::endl;
-    file.close();
-    return gyroAvg;
-  } else {
-    std::cout << "[MPU9250] Could not load the calibration settings. Tried to open: " + m_gyroCalFile
-        << std::endl;
-    file.close();
-    return {};
-  }
 }
 
 opendlv::proxy::AccelerationReading MPU9250Device::readAccelerometer()

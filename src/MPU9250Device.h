@@ -27,7 +27,7 @@
 
 class MPU9250Device{
  public:
-  MPU9250Device(std::string const &);
+  MPU9250Device(std::string const &, bool const &);
   MPU9250Device(MPU9250Device const &) = delete;
   MPU9250Device &operator=(MPU9250Device const &) = delete;
   virtual ~MPU9250Device();
@@ -65,11 +65,12 @@ class MPU9250Device{
   void i2cWriteRegister(std::vector<uint8_t> const &);
   std::vector<uint8_t> i2cReadRegister(std::vector<uint8_t> const &, uint8_t const &);
   int8_t i2cAccessDevice(uint8_t const);
-  void initialiseMpu();
-  int8_t setGyroOffset(std::vector<float> const);
-  std::vector<float> calibrateMPU9250();
-  int8_t saveGyroCalibrationFile(std::vector<float> const);
-  std::vector<float> loadGyroCalibrationFile();
+  void resetMpu();
+  void initMpu();
+  std::vector<float> getGyroCalibration();
+  void saveGyroCalibration(std::vector<float> const);
+  void loadGyroCalibration();
+  void setGyroCalibration(std::vector<float> const);
   void setAscale(A_SCALE);
   float getAscale();
   void setGscale(G_SCALE);

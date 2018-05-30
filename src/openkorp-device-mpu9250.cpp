@@ -28,10 +28,9 @@ int32_t main(int32_t argc, char **argv) {
   auto commandlineArguments = cluon::getCommandlineArguments(argc, argv);
   if (0 == commandlineArguments.count("cid") ||
       0 == commandlineArguments.count("freq") ||
-      0 == commandlineArguments.count("id")
-    ){
+      0 == commandlineArguments.count("id")){
     std::cerr << argv[0] << " interfaces to the MPU9250 IMU on I2C bus." << std::endl;
-    std::cerr << "Usage:   " << argv[0] << " --cid=<OpenDaVINCI session> --freq=<runtime frequency> --dev=<I2C bus> --id=<id> [--verbose]" << std::endl;
+    std::cerr << "Usage:   " << argv[0] << " --cid=<OpenDaVINCI session> --freq=<runtime frequency> --dev=<I2C bus> --id=<id> [--verbose] [--calibrate]" << std::endl;
     std::cerr << "Example: " << argv[0] << " --cid=111 --freq=10 --dev=/dev/i2c-0 --id=0"  << std::endl;
     return 1;
   } 
@@ -41,12 +40,13 @@ int32_t main(int32_t argc, char **argv) {
   if (VERBOSE) {
     VERBOSE = std::stoi(commandlineArguments["verbose"]);
   }
+  bool CALIBRATE{commandlineArguments.count("calibrate") != 0};
   int32_t const FREQ{std::stoi(commandlineArguments["freq"])};
   std::string const devNode{commandlineArguments["dev"]};
   uint16_t const CID = std::stoi(commandlineArguments["cid"]);
   uint16_t const ID = std::stoi(commandlineArguments["id"]);
   cluon::OD4Session od4{CID};
-  std::unique_ptr<MPU9250Device> imu(new MPU9250Device(devNode));
+  std::unique_ptr<MPU9250Device> imu(new MPU9250Device(devNode, CALIBRATE));
 
   if (VERBOSE == 2) {
     initscr();
