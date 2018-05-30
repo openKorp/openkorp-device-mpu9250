@@ -57,6 +57,7 @@ MPU9250Device::MPU9250Device(std::string const &a_deviceName, bool const &a_cali
   if (a_calibrate) {
     std::vector<float> gyroCal = getGyroCalibration();
     saveGyroCalibration(gyroCal);
+    getAccCalibration();
   } else {
     initMpu();
   }
@@ -208,7 +209,7 @@ void MPU9250Device::initMpu()
 std::vector<float> MPU9250Device::getGyroCalibration()
 {
   i2cAccessDevice(MPU9250_ADDRESS);
-  std::cout << "[MPU9250] Starting calibration...\n";
+  std::cout << "[MPU9250] Starting calibration gyroscope...\n";
   resetMpu();
 
   std::vector<uint8_t> rawData;
@@ -248,7 +249,7 @@ std::vector<float> MPU9250Device::getGyroCalibration()
 
     i2cWriteRegister(std::vector<uint8_t>{MPU9250::USER_CTRL, 0x40});
     i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, MPU9250::FIFO_GYRO_X_EN | MPU9250::FIFO_GYRO_Y_EN | MPU9250::FIFO_GYRO_Z_EN});
-    usleep(4000000);
+    usleep(1000000);
 
     i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, 0x00});
     
@@ -303,8 +304,22 @@ std::vector<float> MPU9250Device::getGyroCalibration()
   return std::vector<float>{xBias, yBias, zBias};
 }
 
+std::vector<float> MPU9250Device::getAccCalibration()
+{
+  // There is no reliable way to align the x, y, and z axis right now. Get factory calibration instead
+  i2cAccessDevice(MPU9250_ADDRESS);
+  std::cout << "[MPU9250] Getting factory calibration for accelerometer...\n";
+  std::vector<uint8_t> rawData = i2cReadRegister(std::vector<uint8_t>{MPU9250::XA_OFFSET_H}, 6);
 
-void MPU9250Device::saveGyroCalibration(std::vector<float> a_offset)
+  float x = (int16_t)(((uint16_t)rawData.at(0)<<7)|(rawData.at(1)>>1));
+  float y = (int16_t)(((uint16_t)rawData.at(2)<<7)|(rawData.at(3)>>1));
+  float z = (int16_t)(((uint16_t)rawData.at(4)<<7)|(rawData.at(5)>>1));
+
+  return std::vector<float>{x, y, z};
+}
+
+
+void MPU9250Device::saveGyroCalibration(std::vector<float> const &a_offset)
 {
   if (a_offset.size() != 3) {
     std::cerr << "[MPU9250] saveGyroCalibrationFile received a vector of a length not supported." << std::endl;
@@ -352,30 +367,50 @@ void MPU9250Device::loadGyroCalibration()
   }
 }
 
-void MPU9250Device::setGyroCalibration(std::vector<float> a_offset)
+void MPU9250Device::setGyroCalibration(std::vector<float> const &a_offset)
 {
-  (void)a_offset;
-  // if (a_offset.size() != 3) {
-  //   std::cerr << "[MPU9250] setGyroOffset received a vector of a length not supported." << std::endl;
-  //   return -1;
-  // }
+  i2cAccessDevice(MPU9250_ADDRESS);
+  if (a_offset.size() != 3) {
+    std::cerr << "[MPU9250] setGyroCalibration received a vector of a length not supported." << std::endl;
+    return;
+  }
 
-  // float const gyroSens  = (250.0f / 32768.0f * static_cast<float>(M_PI) / 180.0f);
+  int16_t xOffset = std::lround(a_offset.at(0));
+  int16_t yOffset = std::lround(a_offset.at(1));
+  int16_t zOffset = std::lround(a_offset.at(2));
 
-  // int32_t xOffset = std::lround(a_offset.at(0) / gyroSens);
-  // int32_t yOffset = std::lround(a_offset.at(1) / gyroSens);
-  // int32_t zOffset = std::lround(a_offset.at(2) / gyroSens);
+  uint8_t xh = (-xOffset/4 >> 8);
+  uint8_t xl = ((-xOffset/4) & 0xFF);
+  uint8_t yh = (-yOffset/4 >> 8);
+  uint8_t yl = ((-yOffset/4) & 0xFF);
+  uint8_t zh = (-zOffset/4 >> 8);
+  uint8_t zl = ((-zOffset/4) & 0xFF);
 
-  // uint8_t xh = (-xOffset/4 >> 8);
-  // uint8_t xl = ((-xOffset/4) & 0xFF);
-  // uint8_t yh = (-yOffset/4 >> 8);
-  // uint8_t yl = ((-yOffset/4) & 0xFF);
-  // uint8_t zh = (-zOffset/4 >> 8);
-  // uint8_t zl = ((-zOffset/4) & 0xFF);
-
-  // i2cAccessDevice(MPU9250_ADDRESS);
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::XG_OFFSET_H, xh, xl, yh, yl, zh, zl});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::XG_OFFSET_H, xh, xl, yh, yl, zh, zl});
   
+}
+
+void MPU9250Device::setAccCalibration(std::vector<float> const &a_offset)
+{
+  i2cAccessDevice(MPU9250_ADDRESS);
+  if (a_offset.size() != 3) {
+    std::cerr << "[MPU9250] setGyroCalibration received a vector of a length not supported." << std::endl;
+    return;
+  }
+
+  int16_t xOffset = std::lround(a_offset.at(0));
+  int16_t yOffset = std::lround(a_offset.at(1));
+  int16_t zOffset = std::lround(a_offset.at(2));
+
+  uint8_t xh = (xOffset >> 7) & 0xFF;
+  uint8_t xl = (xOffset << 1) & 0xFF;
+  uint8_t yh = (yOffset >> 7) & 0xFF;
+  uint8_t yl = (yOffset << 1) & 0xFF;
+  uint8_t zh = (zOffset >> 7) & 0xFF;
+  uint8_t zl = (zOffset << 1) & 0xFF;
+
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::XA_OFFSET_H, xh, xl, yh, yl, zh, zl});
+
 }
 
 opendlv::proxy::AccelerationReading MPU9250Device::readAccelerometer()

@@ -68,9 +68,12 @@ class MPU9250Device{
   void resetMpu();
   void initMpu();
   std::vector<float> getGyroCalibration();
-  void saveGyroCalibration(std::vector<float> const);
+  std::vector<float> getAccCalibration();
+
+  void saveGyroCalibration(std::vector<float> const &);
   void loadGyroCalibration();
-  void setGyroCalibration(std::vector<float> const);
+  void setGyroCalibration(std::vector<float> const &);
+  void setAccCalibration(std::vector<float> const &);
   void setAscale(A_SCALE);
   float getAscale();
   void setGscale(G_SCALE);
