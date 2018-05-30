@@ -110,9 +110,14 @@ find_package( Curses REQUIRED )
 include_directories( ${CURSES_INCLUDE_DIRS} )
 
 ################################################################################
+# Eigen
+find_package(Eigen3 3.3 REQUIRED )
+include_directories(${Eigen3_INCLUDE_DIRS})
+
+################################################################################
 # Gather all object code first to avoid double compilation.
 add_library(${PROJECT_NAME}-core OBJECT  ${CMAKE_BINARY_DIR}/opendlv-standard-message-set.cpp ${CMAKE_BINARY_DIR}/openkorp-message-set.cpp)
-set(LIBRARIES Threads::Threads ${CURSES_LIBRARIES})
+set(LIBRARIES Threads::Threads ${CURSES_LIBRARIES} ${Eigen3_LIBS})
 
 ################################################################################
 # Create executable.

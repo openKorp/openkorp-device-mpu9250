@@ -27,6 +27,8 @@
 #include <fstream>
 #include <unistd.h>
 
+#include <eigen3/Eigen/Dense>
+
 #include "MPU9250Device.h"
 
 /**
