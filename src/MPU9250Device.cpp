@@ -602,8 +602,8 @@ Calibration MPU9250Device::ellipsoidFitting(Eigen::MatrixXf const &a_data)
 
     //Find err
     Eigen::MatrixXf u_diff = new_u - u;
-    for (uint32_t i = 0; i < u_diff.rows(); i++) {
-        for (uint32_t j = 0; j < u_diff.cols(); j++) {
+    for (int32_t i = 0; i < u_diff.rows(); i++) {
+        for (int32_t j = 0; j < u_diff.cols(); j++) {
           u_diff(i, j) *= u_diff(i, j); // Square each element of the matrix
         }
     }
