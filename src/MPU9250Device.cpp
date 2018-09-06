@@ -24,12 +24,12 @@
 
 #include <cmath>
 #include <iostream>
-#include <fstream>
+// #include <fstream>
 #include <unistd.h>
 
-#include <eigen3/Eigen/Dense>
+#include <eigen3/Eigen/SVD>
 
-#include "MPU9250Device.h"
+#include "MPU9250Device.hpp"
 
 /**
  * Constructor for MPU9250 device interfacing through I2C.
@@ -38,12 +38,19 @@ MPU9250Device::MPU9250Device(std::string const &a_deviceName, bool const &a_cali
     : m_deviceFile()
     , m_addressType()
     , m_instrumentAdress()
+    , m_accCal()
+    , m_gyroCal()
+    , m_magCal()
     , m_accCalFile("acc.cal")
     , m_gyroCalFile("gyro.cal")
     , m_magCalFile("mag.cal")
-    , m_gscale(MPU9250Device::G_SCALE::GFS_250DPS)
-    , m_ascale(MPU9250Device::A_SCALE::AFS_2G)
-    , m_mscale(MPU9250Device::M_SCALE::MFS_14BITS)
+    , m_afsr(MPU9250Device::A_SCALE::AFS_2G)
+    , m_gfsr(MPU9250Device::G_SCALE::GFS_250DPS)
+    , m_accConversion(0.0f)
+    , m_gyroConversion(0.0f)
+    , m_adlpf(MPU9250Device::A_DLPF::ADLPF_184)
+    , m_gdlpf(MPU9250Device::G_DLPF::GDLPF_184)
+    , m_mfsr(MPU9250Device::M_SCALE::MFS_14BITS)
     , m_mmode(MPU9250Device::M_MODE::M_100HZ)
 {
   m_deviceFile = open(a_deviceName.c_str(), O_RDWR);
@@ -54,22 +61,8 @@ MPU9250Device::MPU9250Device(std::string const &a_deviceName, bool const &a_cali
     std::cout << "[MPU9250] I2C bus " << a_deviceName 
         << " opened successfully." << std::endl;
   }
-  if (a_calibrate) {
-    std::vector<float> gyroCal = getGyroCalibration();
-    saveGyroCalibration(gyroCal);
-    getAccCalibration();
-  } else {
-    initMpu();
-  }
-
-
-  // std::vector<float> gyroBiasVec = loadGyroCalibration();
-  // if (gyroBiasVec.empty()) {
-  //   gyroBiasVec = calibrateMPU9250();
-  //   setGyroOffset(gyroBiasVec); 
-  //   saveGyroCalibrationFile(gyroBiasVec);
-  // }
-
+  initMpu();
+  (void) a_calibrate;
 }
 
 
@@ -110,99 +103,28 @@ void MPU9250Device::resetMpu()
 {
   // wake up device
   // Clear sleep mode bit (6), enable all sensors
-  uint8_t addr = MPU9250_ADDRESS;
-  i2cAccessDevice(addr);
+  i2cAccessDevice(MPU9250_ADDRESS);
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1, 0x01<<7});
   usleep(10000); // Wait for all registers to reset
-
 
   if (i2cReadRegister(std::vector<uint8_t>{MPU9250::WHO_AM_I_MPU9250}, 1).at(0) != 0x71) {
     std::cerr << "[MPU9250] Wrong who am I code returned. " << std::endl;
   }
-
-
-
-
-  // Configure Gyro and Thermometer
-  // Disable FSYNC and set thermometer and gyro bandwidth to 41 and 42 Hz,
-  // respectively;
-  // minimum delay time for this setting is 5.9 ms, which means sensor fusion
-  // update rates cannot be higher than 1 / 0.0059 = 170 Hz
-  // DLPF_CFG = bits 2:0 = 011; this limits the sample rate to 1000 Hz for both
-  // With the MPU9250, it is possible to get gyro sample rates of 32 kHz (!),
-  // 8 kHz, or 1 kHz
-  // reg = MPU9250::CONFIG;
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::CONFIG, 0x03});
-
-  // Set sample rate = gyroscope output rate/(1 + SMPLRT_DIV)
-  // Use a 200 Hz rate; a rate consistent with the filter update rate
-  // determined inset in CONFIG above.
-  // reg = MPU9250::SMPLRT_DIV;
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::SMPLRT_DIV, 0x04});
-
-  // Set gyroscope full scale range
-  // Range selects FS_SEL and AFS_SEL are 0 - 3, so 2-bit values are
-  // left-shifted into positions 4:3
-
-  // get current GYRO_CONFIG register value
-  // uint8_t c;
-  // reg = MPU9250::GYRO_CONFIG;
-  // i2cReadRegister(reg, &c, 1);
-  // std::vector<uint8_t> c = i2cReadRegister(std::vector<uint8_t>{MPU9250::GYRO_CONFIG}, 1);
-  // c = c & ~0xE0; // Clear self-test bits [7:5]
-  // c[0] = c[0] & ~0x02; // Clear Fchoice bits [1:0]
-  // c[0] = c[0] & ~0x18; // Clear AFS bits [4:3]
-  // c[0] = c[0] | m_gscale << 3; // Set full scale range for the gyro
-  // Set Fchoice for the gyro to 11 by writing its inverse to bits 1:0 of
-  // GYRO_CONFIG
-  // c =| 0x00;
-  // Write new GYRO_CONFIG value to register
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::GYRO_CONFIG, c[0]});
-
-  // Set accelerometer full-scale range configuration
-  // Get current ACCEL_CONFIG register value
-  // reg = MPU9250::ACCEL_CONFIG;
-  // c = i2cReadRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG}, 1);
-  // c = c & ~0xE0; // Clear self-test bits [7:5]
-  // c[0] = c[0] & ~0x18;  // Clear AFS bits [4:3]
-  // c[0] = c[0] | m_ascale << 3; // Set full scale range for the accelerometer
-  // Write new ACCEL_CONFIG register value
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG, c[0]});
-
-  // Set accelerometer sample rate configuration
-  // It is possible to get a 4 kHz sample rate from the accelerometer by
-  // choosing 1 for accel_fchoice_b bit [3]; in this case the bandwidth is
-  // 1.13 kHz
-  // Get current ACCEL_CONFIG2 register value
-  // reg = MPU9250::ACCEL_CONFIG2;
-  // c = i2cReadRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG2}, 1);
-  // c[0] = c[0] & ~0x0F; // Clear accel_fchoice_b (bit 3) and A_DLPFG (bits [2:0])
-  // c[0] = c[0] | 0x03;  // Set accelerometer rate to 1 kHz and bandwidth to 41 Hz
-  // Write new ACCEL_CONFIG2 register value
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG2, c[0]});
-  // The accelerometer, gyro, and thermometer are set to 1 kHz sample rates,
-  // but all these rates are further reduced by a factor of 5 to 200 Hz because
-  // of the SMPLRT_DIV setting
-
-  // Configure Interrupts and Bypass Enable
-  // Set interrupt pin active high, push-pull, hold interrupt pin level HIGH
-  // until interrupt cleared, clear on read of INT_STATUS, and enable
-  // I2C_BYPASS_EN so additional chips can join the I2C bus and all can be
-  // controlled by the Arduino as master.
-  // reg = MPU9250::INT_PIN_CFG;
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::INT_PIN_CFG, 0x22});
-  // Enable data ready (bit 0) interrupt
-  // reg = MPU9250::INT_ENABLE;
-  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::INT_ENABLE, 0x01});
-  // usleep(100000);
 }
 
 void MPU9250Device::initMpu()
 {
   resetMpu();
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG2, MPU9250::BIT_FIFO_SIZE_1024 | 0x8});
-
-
+  m_accCal = Calibration(m_accCalFile);
+  m_gyroCal = Calibration(m_gyroCalFile);
+  setAccCalibration();
+  setGyroCalibration();
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::SMPLRT_DIV, 0x00});
+  setAccFullScaleRange(m_afsr);
+  setGyroFullScaleRange(m_gfsr);
+  setAccDigitalLowPassFilter(m_adlpf);
+  setGyroDigitalLowPassFilter(m_gdlpf);
 }
 
 
@@ -213,7 +135,6 @@ std::vector<float> MPU9250Device::getGyroCalibration()
   resetMpu();
 
   std::vector<uint8_t> rawData;
-
 
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1, 0x01});
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_2, 0x00});
@@ -239,13 +160,13 @@ std::vector<float> MPU9250Device::getGyroCalibration()
 
   bool calibrate = true;
 
-  float xBias = 0;
-  float yBias = 0;
-  float zBias = 0;
+  float xOffset = 0;
+  float yOffset = 0;
+  float zOffset = 0;
 
   while(calibrate){
     float const DEVIATION_THRESHOLD = 50;
-    float const BIAS_THRESHOLD = 500;
+    float const OFFSET_THRESHOLD = 500;
 
     i2cWriteRegister(std::vector<uint8_t>{MPU9250::USER_CTRL, 0x40});
     i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, MPU9250::FIFO_GYRO_X_EN | MPU9250::FIFO_GYRO_Y_EN | MPU9250::FIFO_GYRO_Z_EN});
@@ -265,8 +186,8 @@ std::vector<float> MPU9250Device::getGyroCalibration()
     Eigen::VectorXf y = Eigen::VectorXf::Zero(sampleCount);
     Eigen::VectorXf z = Eigen::VectorXf::Zero(sampleCount);
 
-    // // std::vector<float> gyroBias;  
-    // int32_t gyroBias[3] = {0,0,0};
+    // // std::vector<float> gyroOffset;  
+    // int32_t gyroOffset[3] = {0,0,0};
     for (uint8_t i = 0; i < sampleCount; i++) {
       // int16_t gyroSampl[3] = {0,0,0};
       rawData = i2cReadRegister(std::vector<uint8_t>{MPU9250::FIFO_R_W}, 6);
@@ -276,12 +197,12 @@ std::vector<float> MPU9250Device::getGyroCalibration()
       z(i) = (int16_t) (((int16_t)rawData.at(4) << 8) | rawData.at(5));
 
     }
-    xBias = x.mean();
-    float xDeviation = std::sqrt(((x.array()-xBias).pow(2).sum()/(sampleCount-1)));
-    yBias = y.mean();
-    float yDeviation = std::sqrt(((y.array()-yBias).pow(2).sum()/(sampleCount-1)));
-    zBias = z.mean();
-    float zDeviation = std::sqrt(((z.array()-zBias).pow(2).sum()/(sampleCount-1)));
+    xOffset = x.mean();
+    float xDeviation = std::sqrt(((x.array()-xOffset).pow(2).sum()/(sampleCount-1)));
+    yOffset = y.mean();
+    float yDeviation = std::sqrt(((y.array()-yOffset).pow(2).sum()/(sampleCount-1)));
+    zOffset = z.mean();
+    float zDeviation = std::sqrt(((z.array()-zOffset).pow(2).sum()/(sampleCount-1)));
     
     calibrate = false;
 
@@ -291,93 +212,126 @@ std::vector<float> MPU9250Device::getGyroCalibration()
           << "Recalibrating..." << std::endl;
       calibrate = true;
     }
-    if(std::abs(xBias) > BIAS_THRESHOLD ||  std::abs(yBias) > BIAS_THRESHOLD ||  std::abs(zBias) > BIAS_THRESHOLD) {
-      std::cout << "[MPU9250] Bias too high: " << xBias << ", " 
-          << yBias << ", " << zBias << ".\n" 
+    if(std::abs(xOffset) > OFFSET_THRESHOLD ||  std::abs(yOffset) > OFFSET_THRESHOLD ||  std::abs(zOffset) > OFFSET_THRESHOLD) {
+      std::cout << "[MPU9250] Offset too high: " << xOffset << ", " 
+          << yOffset << ", " << zOffset << ".\n" 
           << "Recalibrating..." << std::endl;
       calibrate = true;
     }
         
   }
-  std::cout << "[MPU9250] Gyro calibration successful, found bias: " << xBias << ", " 
-      << yBias << ", " << zBias << "." << std::endl;
-  return std::vector<float>{xBias, yBias, zBias};
+  std::cout << "[MPU9250] Gyro calibration successful, found bias: " << xOffset << ", " 
+      << yOffset << ", " << zOffset << "." << std::endl;
+  return std::vector<float>{xOffset, yOffset, zOffset};
 }
 
 std::vector<float> MPU9250Device::getAccCalibration()
 {
-  // There is no reliable way to align the x, y, and z axis right now. Get factory calibration instead
+  std::vector<std::string> const axis{"x","y","z"};
+  std::vector<std::string> const orientation{"upwards","downwards"};
   i2cAccessDevice(MPU9250_ADDRESS);
-  std::cout << "[MPU9250] Getting factory calibration for accelerometer...\n";
-  std::vector<uint8_t> rawData = i2cReadRegister(std::vector<uint8_t>{MPU9250::XA_OFFSET_H}, 6);
+  std::cout << "[MPU9250] Starting calibration accelerometer...\n";
+  resetMpu();
 
-  float x = (int16_t)(((uint16_t)rawData.at(0)<<7)|(rawData.at(1)>>1));
-  float y = (int16_t)(((uint16_t)rawData.at(2)<<7)|(rawData.at(3)>>1));
-  float z = (int16_t)(((uint16_t)rawData.at(4)<<7)|(rawData.at(5)>>1));
+  // Ellipsoid approx
+  // First row: center point, Second row: length axis
+  Eigen::MatrixXf calibration(2,3);
 
-  return std::vector<float>{x, y, z};
-}
+  Eigen::MatrixXf measurementAverage(6,3);
 
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1, 0x01});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_2, 0x00});
+  usleep(200000);
 
-void MPU9250Device::saveGyroCalibration(std::vector<float> const &a_offset)
-{
-  if (a_offset.size() != 3) {
-    std::cerr << "[MPU9250] saveGyroCalibrationFile received a vector of a length not supported." << std::endl;
-  }
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::INT_ENABLE, 0x00});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, 0x00});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1, 0x00});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::I2C_MST_CTRL, 0x00});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::USER_CTRL, 0x00});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::USER_CTRL, 0x0C});
+  usleep(15000);
 
-  std::ofstream gyroCalibrationFile(m_gyroCalFile);
-  if (gyroCalibrationFile.is_open()) {
-    std::cout << "[MPU9250] Saved gyro cal:" << a_offset.at(0) << ", " << a_offset.at(1) << ", " << a_offset.at(2) << "." << std::endl;;
-    gyroCalibrationFile << a_offset.at(0) << "\n" << a_offset.at(1) << "\n" << a_offset.at(2) << "\n";
-  } else {
-    std::cout << "[MPU9250] Unable to save calibration file. Tried to open: " + m_gyroCalFile + "\n";
-  }
-  gyroCalibrationFile.flush();
-  gyroCalibrationFile.close();
-}
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::CONFIG, 0x01});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::SMPLRT_DIV, 0x04});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::GYRO_CONFIG, 0x00});
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG, 0x00});
 
-void MPU9250Device::loadGyroCalibration() 
-{
-  std::vector<float> gyroCal{0,0,0};
-  std::ifstream file(m_gyroCalFile, std::ifstream::in);
-  if (file.is_open()){
-    std::string line;
-    for (uint8_t i = 0; i < 3; ++i) {
-      std::getline(file, line);
-      try{
-        gyroCal.at(i) = std::stof(line);
-      } catch (std::invalid_argument e) {
-        std::cerr << "[MPU9250] Invalid calibration file format." << std::endl;
-        file.close();
+  // collect data
+  uint8_t j{0};
+  for (const std::string& ax : axis) {
+    for (const std::string& orient : orientation) {
+      std::cout << "Orient the " << ax << "-axis pointing " << orient << " and keep still..."
+          << "\nCalibrating in\n";
+      for (uint8_t i = 10; i > 0; i--) {
+        usleep(1000000);
+        std::cout << i << std::endl;
       }
+      measurementAverage.row(j) = sampleAccelerometer();
+      j++;
     }
-    std::cout << "[MPU9250] Loaded the calibration settings." << std::endl;
-    std::cout << "\nLoaded:"
-        << " Gyro: " << gyroCal.at(0) << ", " 
-        << gyroCal.at(1) << ", " 
-        << gyroCal.at(2) << std::endl;
-    file.close();
-  } else {
-    std::cout << "[MPU9250] Could not load the calibration settings. Tried to open: " 
-        << m_gyroCalFile << std::endl;
-    file.close();
-    std::cout << "[MPU9250] Calibrating the gyroscope instead..." << std::endl;
-    
-
   }
+  measurementAverage = measurementAverage/16384.0f;
+
+
+
+
+  return std::vector<float>{};
 }
 
-void MPU9250Device::setGyroCalibration(std::vector<float> const &a_offset)
+Eigen::Vector3f MPU9250Device::sampleAccelerometer()
 {
-  i2cAccessDevice(MPU9250_ADDRESS);
-  if (a_offset.size() != 3) {
-    std::cerr << "[MPU9250] setGyroCalibration received a vector of a length not supported." << std::endl;
-    return;
+  float const DEVIATION_THRESHOLD = 100;
+  Eigen::Vector3f mean;
+  Eigen::Vector3f deviation;
+  std::vector<uint8_t> rawData;
+  std::cout << "Calibrating the accelerometer..." << std::endl;
+  
+  while ((deviation.array().abs() > DEVIATION_THRESHOLD).sum() > 0) {
+    std::cout << "Keep the sensor still..." << std::endl;
+  
+    i2cWriteRegister(std::vector<uint8_t>{MPU9250::USER_CTRL, 0x40});
+    i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, MPU9250::FIFO_ACCEL_EN});
+    usleep(1000000);
+    i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, 0x00});
+    
+    rawData = i2cReadRegister(std::vector<uint8_t>{MPU9250::FIFO_COUNTH}, 2);
+
+    int16_t fifoCount = ((uint16_t) rawData.at(0) <<  8) | rawData.at(1);
+
+    std::cout << "[MPU9250] FIFO Count: " << fifoCount << std::endl;
+    int32_t sampleCount = fifoCount/6;
+    std::cout << "[MPU9250] Sample Count: " << sampleCount << std::endl;
+
+    Eigen::MatrixXf samples(sampleCount, 3);
+
+    for (uint8_t i = 0; i < sampleCount; i++) {
+      // int16_t gyroSampl[3] = {0,0,0};
+      rawData = i2cReadRegister(std::vector<uint8_t>{MPU9250::FIFO_R_W}, 6);
+
+      samples(i, 0) = (int16_t) (((int16_t)rawData.at(0) << 8) | rawData.at(1));
+      samples(i, 1) = (int16_t) (((int16_t)rawData.at(2) << 8) | rawData.at(3));
+      samples(i, 2) = (int16_t) (((int16_t)rawData.at(4) << 8) | rawData.at(5));
+
+    }
+    for (uint8_t i = 0; i < 3; i++) {
+      mean(i) = samples.col(i).mean();
+      deviation(i) = std::sqrt(((samples.col(i).array()-mean(i)).pow(2).sum()/(sampleCount-1)));
+    }
+    
   }
 
-  int16_t xOffset = std::lround(a_offset.at(0));
-  int16_t yOffset = std::lround(a_offset.at(1));
-  int16_t zOffset = std::lround(a_offset.at(2));
+  return mean;
+}
+
+int8_t MPU9250Device::setGyroCalibration()
+{
+  Eigen::Vector3f offset = m_gyroCal.getCenter();
+
+  i2cAccessDevice(MPU9250_ADDRESS);
+
+  int16_t xOffset = std::lround(offset(0));
+  int16_t yOffset = std::lround(offset(1));
+  int16_t zOffset = std::lround(offset(2));
 
   uint8_t xh = (-xOffset/4 >> 8);
   uint8_t xl = ((-xOffset/4) & 0xFF);
@@ -387,20 +341,20 @@ void MPU9250Device::setGyroCalibration(std::vector<float> const &a_offset)
   uint8_t zl = ((-zOffset/4) & 0xFF);
 
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::XG_OFFSET_H, xh, xl, yh, yl, zh, zl});
+
+  return 0;
   
 }
 
-void MPU9250Device::setAccCalibration(std::vector<float> const &a_offset)
+int8_t MPU9250Device::setAccCalibration()
 {
-  i2cAccessDevice(MPU9250_ADDRESS);
-  if (a_offset.size() != 3) {
-    std::cerr << "[MPU9250] setGyroCalibration received a vector of a length not supported." << std::endl;
-    return;
-  }
+  Eigen::Vector3f offset = m_accCal.getCenter();
 
-  int16_t xOffset = std::lround(a_offset.at(0));
-  int16_t yOffset = std::lround(a_offset.at(1));
-  int16_t zOffset = std::lround(a_offset.at(2));
+  i2cAccessDevice(MPU9250_ADDRESS);
+
+  int16_t xOffset = std::lround(offset(0));
+  int16_t yOffset = std::lround(offset(1));
+  int16_t zOffset = std::lround(offset(2));
 
   uint8_t xh = (xOffset >> 7) & 0xFF;
   uint8_t xl = (xOffset << 1) & 0xFF;
@@ -410,28 +364,25 @@ void MPU9250Device::setAccCalibration(std::vector<float> const &a_offset)
   uint8_t zl = (zOffset << 1) & 0xFF;
 
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::XA_OFFSET_H, xh, xl, yh, yl, zh, zl});
-
+  return 0;
 }
 
 opendlv::proxy::AccelerationReading MPU9250Device::readAccelerometer()
 {
-  // uint8_t addr = MPU9250_ADDRESS;
-  // i2cAccessDevice(addr);
-  // uint8_t reg = MPU9250::ACCEL_XOUT_H;
-  // uint8_t rawData[6];
-  // i2cReadRegister(reg, &rawData[0], 6);
+  i2cAccessDevice(MPU9250_ADDRESS);
+  std::vector<uint8_t> rawData = i2cReadRegister(std::vector<uint8_t>{MPU9250::ACCEL_XOUT_H}, 6);
 
-  // float const c = getAscale();
+  float const c = m_accConversion;
 
-  // int16_t x = (((int16_t)rawData[0] << 8) | rawData[1] );
-  // int16_t y = (((int16_t)rawData[2] << 8) | rawData[3] );
-  // int16_t z = (((int16_t)rawData[4] << 8) | rawData[5] );
-  // opendlv::proxy::AccelerationReading accelerometerReading(x*c,y*c,z*c);
-  // std::cout << "magneto x: " << x;
-  // std::cout << "magneto y: " << y;
-  // std::cout << "magneto z: " << z;
-  // opendlv::proxy::AccelerationReading accelerometerReading(0,0,0);
-  return opendlv::proxy::AccelerationReading();
+  int16_t x = (((int16_t)rawData[0] << 8) | rawData[1] );
+  int16_t y = (((int16_t)rawData[2] << 8) | rawData[3] );
+  int16_t z = (((int16_t)rawData[4] << 8) | rawData[5] );
+
+  opendlv::proxy::AccelerationReading reading;
+  reading.accelerationX(x*c);
+  reading.accelerationY(y*c);
+  reading.accelerationZ(z*c);
+  return reading;
 }
 
 opendlv::proxy::MagneticFieldReading MPU9250Device::readMagnetometer()
@@ -450,88 +401,230 @@ opendlv::proxy::MagneticFieldReading MPU9250Device::readMagnetometer()
   return opendlv::proxy::MagneticFieldReading();
 }
 
+opendlv::proxy::PressureReading MPU9250Device::readAltimeter()
+{
+  return opendlv::proxy::PressureReading();
+}
+
 
 opendlv::proxy::AngularVelocityReading MPU9250Device::readGyroscope()
 {
-  // uint8_t reg = MPU9250::GYRO_XOUT_H;
-  // uint8_t rawData[6];
-  // i2cReadRegister(reg, &rawData[0], 6);
+  i2cAccessDevice(MPU9250_ADDRESS);
+  std::vector<uint8_t> rawData = i2cReadRegister(std::vector<uint8_t>{MPU9250::GYRO_XOUT_H}, 6);
 
-  // float const c = getGscale(true);
+  float const c = m_gyroConversion;
+
+  int16_t x = (((int16_t)rawData[0] << 8) | rawData[1] );
+  int16_t y = (((int16_t)rawData[2] << 8) | rawData[3] );
+  int16_t z = (((int16_t)rawData[4] << 8) | rawData[5] );
   
-  // int16_t x = (((int16_t)rawData[0] << 8) | rawData[1] );
-  // int16_t y = (((int16_t)rawData[2] << 8) | rawData[3] );
-  // int16_t z = (((int16_t)rawData[4] << 8) | rawData[5] );
-  
-  // opendlv::proxy::AngularVelocityReading gyroscopeReading(x*c,y*c,z*c);
-  // opendlv::proxy::AngularVelocityReading gyroscopeReading(0,0,0);
-  return opendlv::proxy::AngularVelocityReading();
-}
-opendlv::proxy::PressureReading MPU9250Device::readAltimeter()
-{
-  // opendlv::proxy::PressureReading altimeterReading(0);
-  return opendlv::proxy::PressureReading();
+  opendlv::proxy::AngularVelocityReading reading;
+  reading.angularVelocityX(x*c);
+  reading.angularVelocityY(y*c);
+  reading.angularVelocityZ(z*c);
+  return reading;
 }
 
 opendlv::proxy::TemperatureReading MPU9250Device::readThermometer()
 {
-  // uint8_t addr = MPU9250_ADDRESS;
-  // i2cAccessDevice(addr);
-  // uint8_t reg = MPU9250::TEMP_OUT_H;
-  // uint8_t rawData[2];
-  // i2cReadRegister(reg, &rawData[0], 2);
+  i2cAccessDevice(MPU9250_ADDRESS);
+  std::vector<uint8_t> rawData = i2cReadRegister(std::vector<uint8_t>{MPU9250::TEMP_OUT_H}, 2);
 
-  // int16_t temp = (((int16_t)rawData[0] << 8) | rawData[1]) / 1.0f;
+  float temp = (((int16_t)rawData[0] << 8) | rawData[1]) / 1.0f;
 
-  // opendlv::proxy::TemperatureReading temperatureReading(21.0f + temp / 333.87f);
-  // opendlv::proxy::TemperatureReading temperatureReading(0);
-  return opendlv::proxy::TemperatureReading();
+
+  opendlv::proxy::TemperatureReading reading;
+  reading.temperature(21.0f + temp / 333.87f);
+  return reading;
 }
 
-void MPU9250Device::setAscale(A_SCALE a_scale)
+void MPU9250Device::setAccFullScaleRange(A_SCALE const &a_fsr)
 {
-  m_ascale = a_scale;
-}
-
-float MPU9250Device::getAscale()
-{
-  switch (m_ascale) {
+  uint8_t val = 0;
+  switch (a_fsr) {
     case AFS_2G:
-      return (9.82f * 2.0f / 32768.0f);
+      val = AFS_2G;
+      m_accConversion = (9.80665f * 2.0f / 32768.0f);
+      break;
     case AFS_4G:
-      return (9.82f * 4.0f / 32768.0f);
+      val = AFS_4G;
+      m_accConversion = (9.80665f * 4.0f / 32768.0f);
+      break;
     case AFS_8G:
-      return (9.82f * 8.0f / 32768.0f);
+      val = AFS_8G;
+      m_accConversion = (9.80665f * 8.0f / 32768.0f);
+      break;
     case AFS_16G:
-      return (9.82f * 16.0f / 32768.0f);
+      val = AFS_16G;
+      m_accConversion = (9.80665f * 16.0f / 32768.0f);
+      break;
     default:
-      return 0.0f;
+      m_accConversion = 0.0f;
+      return;
+      break;
   }
+  i2cAccessDevice(MPU9250_ADDRESS);
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG, val});
 }
 
-void MPU9250Device::setGscale(G_SCALE a_scale)
+void MPU9250Device::setGyroFullScaleRange(G_SCALE const &a_fsr)
 {
-  m_gscale = a_scale;
-}
-
-float MPU9250Device::getGscale(bool a_radFlag)
-{
-    float conversion = 1;
-    if (a_radFlag) {
-      conversion = static_cast<float>(M_PI) / 180.0f;
-    }
-    switch (m_ascale) {
+  uint8_t val = 0;
+  float const conversion =  static_cast<float>(M_PI) / 180.0f;
+  
+  switch (a_fsr) {
     case GFS_250DPS:
-      return (250.0f / 32768.0f) * conversion;
+      val = MPU9250::GYRO_FSR_CFG_250 | MPU9250::FCHOICE_B_DLPF_EN;
+      m_gyroConversion = (250.0f / 32768.0f) * conversion;
+      break;
     case GFS_500DPS:
-      return (500.0f / 32768.0f) * conversion;
+      val = MPU9250::GYRO_FSR_CFG_500 | MPU9250::FCHOICE_B_DLPF_EN;
+      m_gyroConversion = (500.0f / 32768.0f) * conversion;
+      break;
     case GFS_1000DPS:
-      return (1000.0f / 32768.0f) * conversion;
+      val = MPU9250::GYRO_FSR_CFG_1000 | MPU9250::FCHOICE_B_DLPF_EN;
+      m_gyroConversion = (1000.0f / 32768.0f) * conversion;
+      break;
     case GFS_2000DPS:
-      return (2000.0f / 32768.0f) * conversion;
+      val = MPU9250::GYRO_FSR_CFG_2000 | MPU9250::FCHOICE_B_DLPF_EN;
+      m_gyroConversion = (2000.0f / 32768.0f) * conversion;
+      break;
     default:
-      return 0.0f;   
+      m_gyroConversion = 0.0f;
+      return;
+      break;
   }
+  i2cAccessDevice(MPU9250_ADDRESS);
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::GYRO_CONFIG, val});
+}
+void MPU9250Device::setAccDigitalLowPassFilter(A_DLPF const &a_dlpf)
+{
+  uint8_t buf = MPU9250::ACCEL_FCHOICE_1KHZ | MPU9250::BIT_FIFO_SIZE_1024;
+  switch (a_dlpf) {
+    case ADLPF_OFF:
+      buf = MPU9250::ACCEL_FCHOICE_4KHZ | MPU9250::BIT_FIFO_SIZE_1024;
+      break;
+    case ADLPF_460:
+      buf |= 0; 
+      break;
+    case ADLPF_184:
+      buf |= 1;
+      break;
+    case ADLPF_92:
+      buf |= 2;
+      break;
+    case ADLPF_41:
+      buf |= 3;
+      break;
+    case ADLPF_20:
+      buf |= 4;
+      break;
+    case ADLPF_10:
+      buf |= 5;
+      break;
+    case ADLPF_5:
+      buf |= 6;
+      break;
+    default:
+      return;
+      break;
+  }
+  i2cAccessDevice(MPU9250_ADDRESS);
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG2, buf});
+} 
+void MPU9250Device::setGyroDigitalLowPassFilter(G_DLPF const &a_dlpf)
+{
+  uint8_t buf = 0;
+  switch (a_dlpf) { 
+    case GDLPF_OFF:
+      buf |= 7;
+      break;
+    case GDLPF_250:
+      buf |= 0;
+      break;
+    case GDLPF_184:
+      buf |= 1;
+      break;
+    case GDLPF_92:
+      buf |= 2;
+      break;
+    case GDLPF_41:
+      buf |= 3;
+      break;
+    case GDLPF_20:
+      buf |= 4;
+      break;
+    case GDLPF_10:
+      buf |= 5;
+      break;
+    case GDLPF_5:
+      buf |= 6;
+      break;
+    default:
+      return;
+      break;
+  }
+  i2cAccessDevice(MPU9250_ADDRESS);
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::CONFIG, buf});
+} 
+Calibration MPU9250Device::ellipsoidFitting(Eigen::MatrixXf const &a_data)
+{
+  float const tolerance = 0.0001f;
+  uint32_t const n = a_data.cols();
+  uint32_t const d = a_data.rows();
+
+  
+  Eigen::MatrixXf const p = a_data;
+  Eigen::MatrixXf q = p;
+  q.conservativeResize(p.rows() + 1, p.cols());
+
+  for(uint32_t i = 0; i < q.cols(); i++)
+  {
+    q(q.rows() - 1, i) = 1;
+  }
+
+  // int count = 1;
+  float err = 1.0f;
+
+  const float init_u = 1.0f / (float) n;
+  Eigen::MatrixXf u = Eigen::MatrixXf::Constant(n, 1, init_u);
+  while (err > tolerance)
+  {
+    Eigen::MatrixXf X = q * u.asDiagonal() * q.transpose();
+    Eigen::MatrixXf M = (q.transpose() * X.inverse() * q).diagonal();
+
+    int32_t j_x, j_y;
+    float maximum = M.maxCoeff(&j_x, &j_y);
+    float step_size = (maximum - d - 1) / ((d + 1) * (maximum + 1));
+
+    Eigen::MatrixXf new_u = (1 - step_size) * u;
+    new_u(j_x, 0) += step_size;
+
+    //Find err
+    Eigen::MatrixXf u_diff = new_u - u;
+    for (uint32_t i = 0; i < u_diff.rows(); i++) {
+        for (uint32_t j = 0; j < u_diff.cols(); j++) {
+          u_diff(i, j) *= u_diff(i, j); // Square each element of the matrix
+        }
+    }
+    err = sqrtf(u_diff.sum());
+    u = new_u;
+  }
+
+  Eigen::MatrixXf U = u.asDiagonal();
+  Eigen::MatrixXf A = (1.0f / (float) d) * (p * U * p.eval().transpose() - (p * u) * (p * u).eval().transpose()).eval().inverse();
+  Eigen::Vector3f center = p * u;
+
+  Eigen::BDCSVD<Eigen::MatrixXf> svd(A, Eigen::ComputeFullU | Eigen:: ComputeFullV);
+  Eigen::MatrixXf S = svd.singularValues().asDiagonal();
+  Eigen::Vector3f Svec = svd.singularValues();
+  Eigen::Vector3f radius = 1/(Svec.array().sqrt());
+  Eigen::MatrixXf rotation = svd.matrixV().transpose();
+
+
+  Eigen::MatrixXf recon = svd.matrixU() * S * rotation;
+
+  return Calibration(center, radius, rotation);
 }
 
 

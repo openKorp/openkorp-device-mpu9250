@@ -22,7 +22,7 @@
 #include "opendlv-standard-message-set.hpp"
 #include "openkorp-message-set.hpp"
 
-#include "MPU9250Device.cpp"
+#include "MPU9250Device.hpp"
 
 int32_t main(int32_t argc, char **argv) {
   auto commandlineArguments = cluon::getCommandlineArguments(argc, argv);

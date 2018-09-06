@@ -1,6 +1,6 @@
 // This is an auto-generated header-only single-file distribution of libcluon.
-// Date: Wed, 23 May 2018 22:00:36 +0200
-// Version: 0.0.99
+// Date: Wed, 13 Jun 2018 20:27:18 +0200
+// Version: 0.0.101
 //
 //
 // Implementation of N4562 std::experimental::any (merged into C++17) for C++11 compilers.
@@ -3777,6 +3777,7 @@ class LIB_API TimeStamp {
 
         template<class PreVisitor, class Visitor, class PostVisitor>
         void accept(PreVisitor &&preVisit, Visitor &&visit, PostVisitor &&postVisit) {
+            (void)visit; // Prevent warnings from empty messages.
             std::forward<PreVisitor>(preVisit)(ID(), ShortName(), LongName());
             
             doTripletForwardVisit(1, std::move("int32_t"s), std::move("seconds"s), m_seconds, preVisit, visit, postVisit);
@@ -3961,6 +3962,7 @@ class LIB_API Envelope {
 
         template<class PreVisitor, class Visitor, class PostVisitor>
         void accept(PreVisitor &&preVisit, Visitor &&visit, PostVisitor &&postVisit) {
+            (void)visit; // Prevent warnings from empty messages.
             std::forward<PreVisitor>(preVisit)(ID(), ShortName(), LongName());
             
             doTripletForwardVisit(1, std::move("int32_t"s), std::move("dataType"s), m_dataType, preVisit, visit, postVisit);
@@ -4141,6 +4143,7 @@ class LIB_API PlayerCommand {
 
         template<class PreVisitor, class Visitor, class PostVisitor>
         void accept(PreVisitor &&preVisit, Visitor &&visit, PostVisitor &&postVisit) {
+            (void)visit; // Prevent warnings from empty messages.
             std::forward<PreVisitor>(preVisit)(ID(), ShortName(), LongName());
             
             doTripletForwardVisit(1, std::move("uint8_t"s), std::move("command"s), m_command, preVisit, visit, postVisit);
@@ -4310,6 +4313,7 @@ class LIB_API PlayerStatus {
 
         template<class PreVisitor, class Visitor, class PostVisitor>
         void accept(PreVisitor &&preVisit, Visitor &&visit, PostVisitor &&postVisit) {
+            (void)visit; // Prevent warnings from empty messages.
             std::forward<PreVisitor>(preVisit)(ID(), ShortName(), LongName());
             
             doTripletForwardVisit(1, std::move("uint8_t"s), std::move("state"s), m_state, preVisit, visit, postVisit);
@@ -5042,6 +5046,133 @@ class LIBCLUON_API TerminateHandler {
 
 #endif
 /*
+ * Copyright (C) 2018  Christian Berger
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#ifndef CLUON_NOTIFYINGPIPELINE_HPP
+#define CLUON_NOTIFYINGPIPELINE_HPP
+
+//#include "cluon/cluon.hpp"
+
+#include <atomic>
+#include <condition_variable>
+#include <deque>
+#include <functional>
+#include <mutex>
+#include <thread>
+
+namespace cluon {
+
+template <class T>
+class LIBCLUON_API NotifyingPipeline {
+   private:
+    NotifyingPipeline(const NotifyingPipeline &) = delete;
+    NotifyingPipeline(NotifyingPipeline &&)      = delete;
+    NotifyingPipeline &operator=(const NotifyingPipeline &) = delete;
+    NotifyingPipeline &operator=(NotifyingPipeline &&) = delete;
+
+   public:
+    NotifyingPipeline(std::function<void(T &&)> delegate)
+        : m_delegate(delegate) {
+        m_pipelineThread = std::thread(&NotifyingPipeline::processPipeline, this);
+
+        // Let the operating system spawn the thread.
+        using namespace std::literals::chrono_literals; // NOLINT
+        do { std::this_thread::sleep_for(1ms); } while (!m_pipelineThreadRunning.load());
+    }
+
+    ~NotifyingPipeline() {
+        m_pipelineThreadRunning.store(false);
+
+        // Wake any waiting threads.
+        m_pipelineCondition.notify_all();
+
+        // Joining the thread could fail.
+        try {
+            if (m_pipelineThread.joinable()) {
+                m_pipelineThread.join();
+            }
+        } catch (...) {} // LCOV_EXCL_LINE
+    }
+
+   public:
+    inline void add(T &&entry) noexcept {
+        std::unique_lock<std::mutex> lck(m_pipelineMutex);
+        m_pipeline.emplace_back(entry);
+    }
+
+    inline void notifyAll() noexcept { m_pipelineCondition.notify_all(); }
+
+    inline bool isRunning() noexcept { return m_pipelineThreadRunning.load(); }
+
+   private:
+    inline void processPipeline() noexcept {
+        // Indicate to caller that we are ready.
+        m_pipelineThreadRunning.store(true);
+
+        while (m_pipelineThreadRunning.load()) {
+            std::unique_lock<std::mutex> lck(m_pipelineMutex);
+            // Wait until the thread should stop or data is available.
+            m_pipelineCondition.wait(lck, [this] { return (!this->m_pipelineThreadRunning.load() || !this->m_pipeline.empty()); });
+
+            // The condition will automatically lock the mutex after waking up.
+            // As we are locking per entry, we need to unlock the mutex first.
+            lck.unlock();
+
+            uint32_t entries{0};
+            {
+                lck.lock();
+                entries = static_cast<uint32_t>(m_pipeline.size());
+                lck.unlock();
+            }
+            for (uint32_t i{0}; i < entries; i++) {
+                T entry;
+                {
+                    lck.lock();
+                    entry = m_pipeline.front();
+                    lck.unlock();
+                }
+
+                if (nullptr != m_delegate) {
+                    m_delegate(std::move(entry));
+                }
+
+                {
+                    lck.lock();
+                    m_pipeline.pop_front();
+                    lck.unlock();
+                }
+            }
+        }
+    }
+
+   private:
+    std::function<void(T &&)> m_delegate;
+
+    std::atomic<bool> m_pipelineThreadRunning{false};
+    std::thread m_pipelineThread{};
+    std::mutex m_pipelineMutex{};
+    std::condition_variable m_pipelineCondition{};
+
+    std::deque<T> m_pipeline{};
+};
+} // namespace cluon
+
+#endif
+/*
  * Copyright (C) 2017-2018  Christian Berger
  *
  * This program is free software: you can redistribute it and/or modify
@@ -5197,6 +5328,7 @@ class LIBCLUON_API UDPSender {
 #ifndef CLUON_UDPRECEIVER_HPP
 #define CLUON_UDPRECEIVER_HPP
 
+//#include "cluon/NotifyingPipeline.hpp"
 //#include "cluon/cluon.hpp"
 
 // clang-format off
@@ -5214,6 +5346,7 @@ class LIBCLUON_API UDPSender {
 #include <deque>
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <string>
@@ -5294,8 +5427,6 @@ class LIBCLUON_API UDPReceiver {
 
     void readFromSocket() noexcept;
 
-    void processPipeline() noexcept;
-
    private:
     int32_t m_socket{-1};
     bool m_isBlockingSocket{true};
@@ -5312,18 +5443,14 @@ class LIBCLUON_API UDPReceiver {
     std::function<void(std::string &&, std::string &&, std::chrono::system_clock::time_point)> m_delegate{};
 
    private:
-    std::atomic<bool> m_pipelineThreadRunning{false};
-    std::thread m_pipelineThread{};
-    std::mutex m_pipelineMutex{};
-    std::condition_variable m_pipelineCondition{};
-
     class PipelineEntry {
        public:
         std::string m_data;
         std::string m_from;
         std::chrono::system_clock::time_point m_sampleTime;
     };
-    std::deque<PipelineEntry> m_pipeline{};
+
+    std::shared_ptr<cluon::NotifyingPipeline<PipelineEntry>> m_pipeline{};
 };
 } // namespace cluon
 
@@ -5348,6 +5475,7 @@ class LIBCLUON_API UDPReceiver {
 #ifndef CLUON_TCPCONNECTION_HPP
 #define CLUON_TCPCONNECTION_HPP
 
+//#include "cluon/NotifyingPipeline.hpp"
 //#include "cluon/cluon.hpp"
 
 // clang-format off
@@ -5363,6 +5491,7 @@ class LIBCLUON_API UDPReceiver {
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -5420,6 +5549,16 @@ whether the instance was created successfully and running, the method
 */
 class LIBCLUON_API TCPConnection {
    private:
+    friend class TCPServer;
+
+    /**
+     * Constructor that is only accessible to TCPServer to manage incoming TCP connections.
+     *
+     * @param socket Socket to handle an existing TCP connection described by this socket.
+     */
+    TCPConnection(const int32_t &socket) noexcept;
+
+   private:
     TCPConnection(const TCPConnection &) = delete;
     TCPConnection(TCPConnection &&)      = delete;
     TCPConnection &operator=(const TCPConnection &) = delete;
@@ -5427,7 +5566,7 @@ class LIBCLUON_API TCPConnection {
 
    public:
     /**
-     * Constructor.
+     * Constructor to connect to a TCP server.
      *
      * @param address Numerical IPv4 address to receive UDP packets from.
      * @param port Port to receive UDP packets from.
@@ -5436,10 +5575,16 @@ class LIBCLUON_API TCPConnection {
      */
     TCPConnection(const std::string &address,
                   uint16_t port,
-                  std::function<void(std::string &&, std::chrono::system_clock::time_point &&)> newDataDelegate,
-                  std::function<void()> connectionLostDelegate) noexcept;
+                  std::function<void(std::string &&, std::chrono::system_clock::time_point &&)> newDataDelegate = nullptr,
+                  std::function<void()> connectionLostDelegate                                                  = nullptr) noexcept;
+
     ~TCPConnection() noexcept;
 
+   public:
+    void setOnNewData(std::function<void(std::string &&, std::chrono::system_clock::time_point &&)> newDataDelegate) noexcept;
+    void setOnConnectionLost(std::function<void()> connectionLostDelegate) noexcept;
+
+   public:
     /**
      * @return true if the TCPConnection could successfully be created and is able to receive data.
      */
@@ -5460,6 +5605,7 @@ class LIBCLUON_API TCPConnection {
      * @param errorCode Error code that caused this closing.
      */
     void closeSocket(int errorCode) noexcept;
+    void startReadingFromSocket() noexcept;
     void readFromSocket() noexcept;
 
    private:
@@ -5470,8 +5616,106 @@ class LIBCLUON_API TCPConnection {
     std::atomic<bool> m_readFromSocketThreadRunning{false};
     std::thread m_readFromSocketThread{};
 
+    std::mutex m_newDataDelegateMutex{};
     std::function<void(std::string &&, std::chrono::system_clock::time_point)> m_newDataDelegate{};
+
+    mutable std::mutex m_connectionLostDelegateMutex{};
     std::function<void()> m_connectionLostDelegate{};
+
+   private:
+    class PipelineEntry {
+       public:
+        std::string m_data;
+        std::chrono::system_clock::time_point m_sampleTime;
+    };
+
+    std::shared_ptr<cluon::NotifyingPipeline<PipelineEntry>> m_pipeline{};
+};
+} // namespace cluon
+
+#endif
+/*
+ * Copyright (C) 2018  Christian Berger
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#ifndef CLUON_TCPSERVER_HPP
+#define CLUON_TCPSERVER_HPP
+
+//#include "cluon/TCPConnection.hpp"
+//#include "cluon/cluon.hpp"
+
+// clang-format off
+#ifdef WIN32
+    #include <Winsock2.h> // for WSAStartUp
+    #include <ws2tcpip.h> // for SOCKET
+#else
+    #include <netinet/in.h>
+#endif
+// clang-format on
+
+#include <cstdint>
+#include <atomic>
+#include <functional>
+#include <mutex>
+#include <string>
+#include <thread>
+
+namespace cluon {
+
+class LIBCLUON_API TCPServer {
+   private:
+    TCPServer(const TCPServer &) = delete;
+    TCPServer(TCPServer &&)      = delete;
+    TCPServer &operator=(const TCPServer &) = delete;
+    TCPServer &operator=(TCPServer &&) = delete;
+
+   public:
+    /**
+     * Constructor to create a TCP server.
+     *
+     * @param port Port to receive UDP packets from.
+     * @param newConnectionDelegate Functional to handle incoming TCP connections.
+     */
+    TCPServer(uint16_t port, std::function<void(std::string &&from, std::shared_ptr<cluon::TCPConnection> connection)> newConnectionDelegate) noexcept;
+
+    ~TCPServer() noexcept;
+
+    /**
+     * @return true if the TCPServer could successfully be created and is able to receive data.
+     */
+    bool isRunning() const noexcept;
+
+   private:
+    /**
+     * This method closes the socket.
+     *
+     * @param errorCode Error code that caused this closing.
+     */
+    void closeSocket(int errorCode) noexcept;
+    void readFromSocket() noexcept;
+
+   private:
+    mutable std::mutex m_socketMutex{};
+    int32_t m_socket{-1};
+
+    std::atomic<bool> m_readFromSocketThreadRunning{false};
+    std::thread m_readFromSocketThread{};
+
+    std::mutex m_newConnectionDelegateMutex{};
+    std::function<void(std::string &&from, std::shared_ptr<cluon::TCPConnection> connection)> m_newConnectionDelegate{};
 };
 } // namespace cluon
 
@@ -9316,11 +9560,13 @@ inline UDPReceiver::UDPReceiver(const std::string &receiveFromAddress,
             } catch (...) { closeSocket(ECHILD); } // LCOV_EXCL_LINE
 
             try {
-                m_pipelineThread = std::thread(&UDPReceiver::processPipeline, this);
-
-                // Let the operating system spawn the thread.
-                using namespace std::literals::chrono_literals; // NOLINT
-                do { std::this_thread::sleep_for(1ms); } while (!m_pipelineThreadRunning.load());
+                m_pipeline = std::make_shared<cluon::NotifyingPipeline<PipelineEntry>>(
+                    [this](PipelineEntry &&entry) { this->m_delegate(std::move(entry.m_data), std::move(entry.m_from), std::move(entry.m_sampleTime)); });
+                if (m_pipeline) {
+                    // Let the operating system spawn the thread.
+                    using namespace std::literals::chrono_literals; // NOLINT
+                    do { std::this_thread::sleep_for(1ms); } while (!m_pipeline->isRunning());
+                }
             } catch (...) { closeSocket(ECHILD); } // LCOV_EXCL_LINE
         }
     }
@@ -9338,19 +9584,7 @@ inline UDPReceiver::~UDPReceiver() noexcept {
         } catch (...) {} // LCOV_EXCL_LINE
     }
 
-    {
-        m_pipelineThreadRunning.store(false);
-
-        // Wake any waiting threads.
-        m_pipelineCondition.notify_all();
-
-        // Joining the thread could fail.
-        try {
-            if (m_pipelineThread.joinable()) {
-                m_pipelineThread.join();
-            }
-        } catch (...) {} // LCOV_EXCL_LINE
-    }
+    m_pipeline.reset();
 
     closeSocket(0);
 }
@@ -9389,46 +9623,6 @@ inline void UDPReceiver::closeSocket(int errorCode) noexcept {
 
 inline bool UDPReceiver::isRunning() const noexcept {
     return (m_readFromSocketThreadRunning.load() && !TerminateHandler::instance().isTerminated.load());
-}
-
-inline void UDPReceiver::processPipeline() noexcept {
-    // Indicate to main thread that we are ready.
-    m_pipelineThreadRunning.store(true);
-
-    while (m_pipelineThreadRunning.load()) {
-        std::unique_lock<std::mutex> lck(m_pipelineMutex);
-        // Wait until the thread should stop or data is available.
-        m_pipelineCondition.wait(lck, [this] { return (!this->m_pipelineThreadRunning.load() || !this->m_pipeline.empty()); });
-
-        // The condition will automatically lock the mutex after waking up.
-        // As we are locking per entry, we need to unlock the mutex first.
-        lck.unlock();
-
-        uint32_t entries{0};
-        {
-            lck.lock();
-            entries = static_cast<uint32_t>(m_pipeline.size());
-            lck.unlock();
-        }
-        for (uint32_t i{0}; i < entries; i++) {
-            PipelineEntry entry;
-            {
-                lck.lock();
-                entry = m_pipeline.front();
-                lck.unlock();
-            }
-
-            if (nullptr != m_delegate) {
-                m_delegate(std::move(entry.m_data), std::move(entry.m_from), std::move(entry.m_sampleTime));
-            }
-
-            {
-                lck.lock();
-                m_pipeline.pop_front();
-                lck.unlock();
-            }
-        }
-    }
 }
 
 inline void UDPReceiver::readFromSocket() noexcept {
@@ -9516,9 +9710,8 @@ inline void UDPReceiver::readFromSocket() noexcept {
                         pe.m_sampleTime = timestamp;
 
                         // Store entry in queue.
-                        {
-                            std::unique_lock<std::mutex> lck(m_pipelineMutex);
-                            m_pipeline.emplace_back(pe);
+                        if (m_pipeline) {
+                            m_pipeline->add(std::move(pe));
                         }
                     }
                     totalBytesRead += bytesRead;
@@ -9527,7 +9720,9 @@ inline void UDPReceiver::readFromSocket() noexcept {
         }
 
         if (static_cast<int32_t>(totalBytesRead) > 0) {
-            m_pipelineCondition.notify_all();
+            if (m_pipeline) {
+                m_pipeline->notifyAll();
+            }
         }
     }
 }
@@ -9576,13 +9771,20 @@ inline void UDPReceiver::readFromSocket() noexcept {
 
 namespace cluon {
 
+inline TCPConnection::TCPConnection(const int32_t &socket) noexcept
+    : m_socket(socket)
+    , m_newDataDelegate(nullptr)
+    , m_connectionLostDelegate(nullptr) {
+    if (!(m_socket < 0)) {
+        startReadingFromSocket();
+    }
+}
+
 inline TCPConnection::TCPConnection(const std::string &address,
                              uint16_t port,
                              std::function<void(std::string &&, std::chrono::system_clock::time_point &&)> newDataDelegate,
                              std::function<void()> connectionLostDelegate) noexcept
-    : m_address()
-    , m_readFromSocketThread()
-    , m_newDataDelegate(std::move(newDataDelegate))
+    : m_newDataDelegate(std::move(newDataDelegate))
     , m_connectionLostDelegate(std::move(connectionLostDelegate)) {
     // Decompose given address string to check validity with numerical IPv4 address.
     std::string tmp{address};
@@ -9620,21 +9822,14 @@ inline TCPConnection::TCPConnection(const std::string &address,
             if (!(m_socket < 0)) {
                 auto retVal = ::connect(m_socket, reinterpret_cast<struct sockaddr *>(&m_address), sizeof(m_address));
                 if (0 > retVal) {
-#ifdef WIN32
+#ifdef WIN32 // LCOV_EXCL_LINE
                     auto errorCode = WSAGetLastError();
 #else
-                    auto errorCode = errno;
-#endif
-                    closeSocket(errorCode);
+                    auto errorCode = errno;                                          // LCOV_EXCL_LINE
+#endif                                      // LCOV_EXCL_LINE
+                    closeSocket(errorCode); // LCOV_EXCL_LINE
                 } else {
-                    // Constructing a thread could fail.
-                    try {
-                        m_readFromSocketThread = std::thread(&TCPConnection::readFromSocket, this);
-
-                        // Let the operating system spawn the thread.
-                        using namespace std::literals::chrono_literals;
-                        do { std::this_thread::sleep_for(1ms); } while (!m_readFromSocketThreadRunning.load());
-                    } catch (...) { closeSocket(ECHILD); }
+                    startReadingFromSocket();
                 }
             }
         }
@@ -9642,26 +9837,30 @@ inline TCPConnection::TCPConnection(const std::string &address,
 }
 
 inline TCPConnection::~TCPConnection() noexcept {
-    m_readFromSocketThreadRunning.store(false);
+    {
+        m_readFromSocketThreadRunning.store(false);
 
-    // Joining the thread could fail.
-    try {
-        if (m_readFromSocketThread.joinable()) {
-            m_readFromSocketThread.join();
-        }
-    } catch (...) {}
+        // Joining the thread could fail.
+        try {
+            if (m_readFromSocketThread.joinable()) {
+                m_readFromSocketThread.join();
+            }
+        } catch (...) {} // LCOV_EXCL_LINE
+    }
+
+    m_pipeline.reset();
 
     closeSocket(0);
 }
 
 inline void TCPConnection::closeSocket(int errorCode) noexcept {
     if (0 != errorCode) {
-        std::cerr << "[cluon::TCPConnection] Failed to perform socket operation: ";
-#ifdef WIN32
+        std::cerr << "[cluon::TCPConnection] Failed to perform socket operation: "; // LCOV_EXCL_LINE
+#ifdef WIN32                                                                        // LCOV_EXCL_LINE
         std::cerr << errorCode << std::endl;
 #else
-        std::cerr << ::strerror(errorCode) << " (" << errorCode << ")" << std::endl;
-#endif
+        std::cerr << ::strerror(errorCode) << " (" << errorCode << ")" << std::endl; // LCOV_EXCL_LINE
+#endif // LCOV_EXCL_LINE
     }
 
     if (!(m_socket < 0)) {
@@ -9670,11 +9869,44 @@ inline void TCPConnection::closeSocket(int errorCode) noexcept {
         ::closesocket(m_socket);
         WSACleanup();
 #else
-        ::shutdown(m_socket, SHUT_RDWR); // Disallow further read/write operations.
+        ::shutdown(m_socket, SHUT_RDWR);                                             // Disallow further read/write operations.
         ::close(m_socket);
 #endif
     }
     m_socket = -1;
+}
+
+inline void TCPConnection::startReadingFromSocket() noexcept {
+    // Constructing a thread could fail.
+    try {
+        m_readFromSocketThread = std::thread(&TCPConnection::readFromSocket, this);
+
+        // Let the operating system spawn the thread.
+        using namespace std::literals::chrono_literals;
+        do { std::this_thread::sleep_for(1ms); } while (!m_readFromSocketThreadRunning.load());
+    } catch (...) {          // LCOV_EXCL_LINE
+        closeSocket(ECHILD); // LCOV_EXCL_LINE
+    }
+
+    try {
+        m_pipeline = std::make_shared<cluon::NotifyingPipeline<PipelineEntry>>(
+            [this](PipelineEntry &&entry) { this->m_newDataDelegate(std::move(entry.m_data), std::move(entry.m_sampleTime)); });
+        if (m_pipeline) {
+            // Let the operating system spawn the thread.
+            using namespace std::literals::chrono_literals; // NOLINT
+            do { std::this_thread::sleep_for(1ms); } while (!m_pipeline->isRunning());
+        }
+    } catch (...) { closeSocket(ECHILD); } // LCOV_EXCL_LINE
+}
+
+inline void TCPConnection::setOnNewData(std::function<void(std::string &&, std::chrono::system_clock::time_point &&)> newDataDelegate) noexcept {
+    std::lock_guard<std::mutex> lck(m_newDataDelegateMutex);
+    m_newDataDelegate = newDataDelegate;
+}
+
+inline void TCPConnection::setOnConnectionLost(std::function<void()> connectionLostDelegate) noexcept {
+    std::lock_guard<std::mutex> lck(m_connectionLostDelegateMutex);
+    m_connectionLostDelegate = connectionLostDelegate;
 }
 
 inline bool TCPConnection::isRunning() const noexcept {
@@ -9691,8 +9923,11 @@ inline std::pair<ssize_t, int32_t> TCPConnection::send(std::string &&data) const
     }
 
     if (!m_readFromSocketThreadRunning.load()) {
-        m_connectionLostDelegate();
-        return {-1, ENOTCONN};
+        std::lock_guard<std::mutex> lck(m_connectionLostDelegateMutex); // LCOV_EXCL_LINE
+        if (nullptr != m_connectionLostDelegate) {                      // LCOV_EXCL_LINE
+            m_connectionLostDelegate();                                 // LCOV_EXCL_LINE
+        }
+        return {-1, ENOTCONN}; // LCOV_EXCL_LINE
     }
 
     constexpr uint16_t MAX_LENGTH{65535};
@@ -9714,10 +9949,253 @@ inline void TCPConnection::readFromSocket() noexcept {
 
     // Define file descriptor set to watch for read operations.
     fd_set setOfFiledescriptorsToReadFrom{};
-    ssize_t bytesRead{0};
 
     // Indicate to main thread that we are ready.
     m_readFromSocketThreadRunning.store(true);
+
+    // This flag is used to not read data from the socket until this TCPConnection has a proper onNewDataHandler set.
+    bool hasNewDataDelegate{false};
+
+    while (m_readFromSocketThreadRunning.load()) {
+        // Define timeout for select system call. The timeval struct must be
+        // reinitialized for every select call as it might be modified containing
+        // the actual time slept.
+        timeout.tv_sec  = 0;
+        timeout.tv_usec = 20 * 1000; // Check for new data with 50Hz.
+
+        FD_ZERO(&setOfFiledescriptorsToReadFrom);
+        FD_SET(m_socket, &setOfFiledescriptorsToReadFrom);
+        ::select(m_socket + 1, &setOfFiledescriptorsToReadFrom, nullptr, nullptr, &timeout);
+
+        // Only read data when the newDataDelegate is set.
+        if (!hasNewDataDelegate) {
+            std::lock_guard<std::mutex> lck(m_newDataDelegateMutex);
+            hasNewDataDelegate = (nullptr != m_newDataDelegate);
+        }
+        if (FD_ISSET(m_socket, &setOfFiledescriptorsToReadFrom) && hasNewDataDelegate) {
+            ssize_t bytesRead = ::recv(m_socket, buffer.data(), buffer.max_size(), 0);
+            if (0 >= bytesRead) {
+                // 0 == bytesRead: peer shut down the connection; 0 > bytesRead: other error.
+                m_readFromSocketThreadRunning.store(false);
+
+                {
+                    std::lock_guard<std::mutex> lck(m_connectionLostDelegateMutex);
+                    if (nullptr != m_connectionLostDelegate) {
+                        m_connectionLostDelegate();
+                    }
+                }
+                break;
+            }
+
+            {
+                std::lock_guard<std::mutex> lck(m_newDataDelegateMutex);
+                if ((0 < bytesRead) && (nullptr != m_newDataDelegate)) {
+#ifdef __linux__
+                    std::chrono::system_clock::time_point timestamp;
+                    struct timeval receivedTimeStamp {};
+                    if (0 == ::ioctl(m_socket, SIOCGSTAMP, &receivedTimeStamp)) {
+                        // Transform struct timeval to C++ chrono.
+                        std::chrono::time_point<std::chrono::system_clock, std::chrono::microseconds> transformedTimePoint(
+                            std::chrono::microseconds(receivedTimeStamp.tv_sec * 1000000L + receivedTimeStamp.tv_usec));
+                        timestamp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(transformedTimePoint);
+                    } else {
+                        // In case the ioctl failed, fall back to chrono.
+                        timestamp = std::chrono::system_clock::now();
+                    }
+#else
+                    std::chrono::system_clock::time_point timestamp = std::chrono::system_clock::now();
+#endif
+                    {
+                        PipelineEntry pe;
+                        pe.m_data       = std::string(buffer.data(), static_cast<size_t>(bytesRead));
+                        pe.m_sampleTime = timestamp;
+
+                        // Store entry in queue.
+                        if (m_pipeline) {
+                            m_pipeline->add(std::move(pe));
+                        }
+                    }
+
+                    if (m_pipeline) {
+                        m_pipeline->notifyAll();
+                    }
+                }
+            }
+        }
+    }
+}
+} // namespace cluon
+/*
+ * Copyright (C) 2018  Christian Berger
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+//#include "cluon/TCPServer.hpp"
+//#include "cluon/TerminateHandler.hpp"
+
+// clang-format off
+#ifdef WIN32
+    #include <errno.h>
+    #include <iostream>
+#else
+    #include <arpa/inet.h>
+    #include <sys/ioctl.h>
+    #include <sys/socket.h>
+    #include <sys/types.h>
+    #include <unistd.h>
+#endif
+// clang-format on
+
+#include <cstring>
+#include <array>
+#include <iostream>
+#include <memory>
+#include <sstream>
+
+namespace cluon {
+
+inline TCPServer::TCPServer(uint16_t port, std::function<void(std::string &&from, std::shared_ptr<cluon::TCPConnection> connection)> newConnectionDelegate) noexcept
+    : m_newConnectionDelegate(newConnectionDelegate) {
+    if (0 < port) {
+#ifdef WIN32
+        // Load Winsock 2.2 DLL.
+        WSADATA wsaData;
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+            std::cerr << "[cluon::TCPServer] Error while calling WSAStartUp: " << WSAGetLastError() << std::endl;
+        }
+#endif
+        m_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+#ifdef WIN32
+        if (m_socket < 0) {
+            std::cerr << "[cluon::TCPServer] Error while creating socket: " << WSAGetLastError() << std::endl;
+            WSACleanup();
+        }
+#endif
+
+        if (!(m_socket < 0)) {
+            // Allow reusing of ports by multiple calls with same address/port.
+            uint32_t YES = 1;
+            // clang-format off
+            auto retVal = ::setsockopt(m_socket, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char *>(&YES), sizeof(YES)); // NOLINT
+            // clang-format on
+            if (0 > retVal) {
+#ifdef WIN32 // LCOV_EXCL_LINE
+                auto errorCode = WSAGetLastError();
+#else
+                auto errorCode = errno;                                              // LCOV_EXCL_LINE
+#endif                                  // LCOV_EXCL_LINE
+                closeSocket(errorCode); // LCOV_EXCL_LINE
+            }
+        }
+
+        if (!(m_socket < 0)) {
+            // Setup address and port.
+            struct sockaddr_in address;
+            ::memset(&address, 0, sizeof(address));
+            address.sin_family      = AF_INET;
+            address.sin_addr.s_addr = htonl(INADDR_ANY);
+            address.sin_port        = htons(port);
+
+            auto retVal = ::bind(m_socket, reinterpret_cast<struct sockaddr *>(&address), sizeof(address));
+            if (-1 != retVal) {
+                constexpr int32_t MAX_PENDING_CONNECTIONS{100};
+                retVal = ::listen(m_socket, MAX_PENDING_CONNECTIONS);
+                if (-1 != retVal) {
+                    // Constructing a thread could fail.
+                    try {
+                        m_readFromSocketThread = std::thread(&TCPServer::readFromSocket, this);
+
+                        // Let the operating system spawn the thread.
+                        using namespace std::literals::chrono_literals;
+                        do { std::this_thread::sleep_for(1ms); } while (!m_readFromSocketThreadRunning.load());
+                    } catch (...) {          // LCOV_EXCL_LINE
+                        closeSocket(ECHILD); // LCOV_EXCL_LINE
+                    }
+                } else { // LCOV_EXCL_LINE
+#ifdef WIN32             // LCOV_EXCL_LINE
+                    auto errorCode = WSAGetLastError();
+#else
+                    auto errorCode = errno;                                          // LCOV_EXCL_LINE
+#endif                                      // LCOV_EXCL_LINE
+                    closeSocket(errorCode); // LCOV_EXCL_LINE
+                }
+            } else { // LCOV_EXCL_LINE
+#ifdef WIN32         // LCOV_EXCL_LINE
+                auto errorCode = WSAGetLastError();
+#else
+                auto errorCode = errno;                                              // LCOV_EXCL_LINE
+#endif                                  // LCOV_EXCL_LINE
+                closeSocket(errorCode); // LCOV_EXCL_LINE
+            }
+        }
+    }
+}
+
+inline TCPServer::~TCPServer() noexcept {
+    m_readFromSocketThreadRunning.store(false);
+
+    // Joining the thread could fail.
+    try {
+        if (m_readFromSocketThread.joinable()) {
+            m_readFromSocketThread.join();
+        }
+    } catch (...) { // LCOV_EXCL_LINE
+    }
+
+    closeSocket(0);
+}
+
+inline void TCPServer::closeSocket(int errorCode) noexcept {
+    if (0 != errorCode) {
+        std::cerr << "[cluon::TCPServer] Failed to perform socket operation: "; // LCOV_EXCL_LINE
+#ifdef WIN32                                                                    // LCOV_EXCL_LINE
+        std::cerr << errorCode << std::endl;
+#else
+        std::cerr << ::strerror(errorCode) << " (" << errorCode << ")" << std::endl; // LCOV_EXCL_LINE
+#endif // LCOV_EXCL_LINE
+    }
+
+    if (!(m_socket < 0)) {
+#ifdef WIN32
+        ::shutdown(m_socket, SD_BOTH);
+        ::closesocket(m_socket);
+        WSACleanup();
+#else
+        ::shutdown(m_socket, SHUT_RDWR);                                             // Disallow further read/write operations.
+        ::close(m_socket);
+#endif
+    }
+    m_socket = -1;
+}
+
+inline bool TCPServer::isRunning() const noexcept {
+    return (m_readFromSocketThreadRunning.load() && !TerminateHandler::instance().isTerminated.load());
+}
+
+inline void TCPServer::readFromSocket() noexcept {
+    struct timeval timeout {};
+
+    // Define file descriptor set to watch for read operations.
+    fd_set setOfFiledescriptorsToReadFrom{};
+
+    // Indicate to main thread that we are ready.
+    m_readFromSocketThreadRunning.store(true);
+
+    constexpr uint16_t MAX_ADDR_SIZE{1024};
+    std::array<char, MAX_ADDR_SIZE> remoteAddress{};
 
     while (m_readFromSocketThreadRunning.load()) {
         // Define timeout for select system call. The timeval struct must be
@@ -9730,33 +10208,17 @@ inline void TCPConnection::readFromSocket() noexcept {
         FD_SET(m_socket, &setOfFiledescriptorsToReadFrom);
         ::select(m_socket + 1, &setOfFiledescriptorsToReadFrom, nullptr, nullptr, &timeout);
         if (FD_ISSET(m_socket, &setOfFiledescriptorsToReadFrom)) {
-            bytesRead = ::recv(m_socket, buffer.data(), buffer.max_size(), 0);
-            if (0 >= bytesRead) {
-                // 0 == bytesRead: peer shut down the connection; 0 > bytesRead: other error.
-                m_readFromSocketThreadRunning.store(false);
-                if (nullptr != m_connectionLostDelegate) {
-                    m_connectionLostDelegate();
-                }
-                break;
-            }
-            if ((0 < bytesRead) && (nullptr != m_newDataDelegate)) {
-#ifdef __linux__
-                std::chrono::system_clock::time_point timestamp;
-                struct timeval receivedTimeStamp {};
-                if (0 == ::ioctl(m_socket, SIOCGSTAMP, &receivedTimeStamp)) {
-                    // Transform struct timeval to C++ chrono.
-                    std::chrono::time_point<std::chrono::system_clock, std::chrono::microseconds> transformedTimePoint(
-                        std::chrono::microseconds(receivedTimeStamp.tv_sec * 1000000L + receivedTimeStamp.tv_usec));
-                    timestamp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(transformedTimePoint);
-                } else {
-                    // In case the ioctl failed, fall back to chrono.
-                    timestamp = std::chrono::system_clock::now();
-                }
-#else
-                std::chrono::system_clock::time_point timestamp = std::chrono::system_clock::now();
-#endif
-                // Call newDataDelegate.
-                m_newDataDelegate(std::string(buffer.data(), static_cast<size_t>(bytesRead)), timestamp);
+            struct sockaddr_storage remote;
+            socklen_t addrLength     = sizeof(remote);
+            int32_t connectingClient = ::accept(m_socket, reinterpret_cast<struct sockaddr *>(&remote), &addrLength);
+            if ((0 <= connectingClient) && (nullptr != m_newConnectionDelegate)) {
+                ::inet_ntop(remote.ss_family,
+                            &((reinterpret_cast<struct sockaddr_in *>(&remote))->sin_addr), // NOLINT
+                            remoteAddress.data(),
+                            remoteAddress.max_size());
+                const uint16_t RECVFROM_PORT{ntohs(reinterpret_cast<struct sockaddr_in *>(&remote)->sin_port)}; // NOLINT
+                m_newConnectionDelegate(std::string(remoteAddress.data()) + ':' + std::to_string(RECVFROM_PORT),
+                                        std::shared_ptr<cluon::TCPConnection>(new cluon::TCPConnection(connectingClient)));
             }
         }
     }
@@ -12836,24 +13298,34 @@ inline bool OD4Session::dataTrigger(int32_t messageIdentifier, std::function<voi
 }
 
 inline void OD4Session::callback(std::string &&data, std::string && /*from*/, std::chrono::system_clock::time_point &&timepoint) noexcept {
-    std::stringstream sstr(data);
-    auto retVal = extractEnvelope(sstr);
+    size_t numberOfDataTriggeredDelegates{0};
+    {
+        try {
+            std::lock_guard<std::mutex> lck{m_mapOfDataTriggeredDelegatesMutex};
+            numberOfDataTriggeredDelegates = m_mapOfDataTriggeredDelegates.size();
+        } catch (...) {} // LCOV_EXCL_LINE
+    }
+    // Only unpack the envelope when it needs to be post-processed.
+    if ((nullptr != m_delegate) || (0 < numberOfDataTriggeredDelegates)) {
+        std::stringstream sstr(data);
+        auto retVal = extractEnvelope(sstr);
 
-    if (retVal.first) {
-        cluon::data::Envelope env{retVal.second};
-        env.received(cluon::time::convert(timepoint));
+        if (retVal.first) {
+            cluon::data::Envelope env{retVal.second};
+            env.received(cluon::time::convert(timepoint));
 
-        // "Catch all"-delegate.
-        if (nullptr != m_delegate) {
-            m_delegate(std::move(env));
-        } else {
-            try {
-                // Data triggered-delegates.
-                std::lock_guard<std::mutex> lck{m_mapOfDataTriggeredDelegatesMutex};
-                if (m_mapOfDataTriggeredDelegates.count(env.dataType()) > 0) {
-                    m_mapOfDataTriggeredDelegates[env.dataType()](std::move(env));
-                }
-            } catch (...) {} // LCOV_EXCL_LINE
+            // "Catch all"-delegate.
+            if (nullptr != m_delegate) {
+                m_delegate(std::move(env));
+            } else {
+                try {
+                    // Data triggered-delegates.
+                    std::lock_guard<std::mutex> lck{m_mapOfDataTriggeredDelegatesMutex};
+                    if (m_mapOfDataTriggeredDelegates.count(env.dataType()) > 0) {
+                        m_mapOfDataTriggeredDelegates[env.dataType()](std::move(env));
+                    }
+                } catch (...) {} // LCOV_EXCL_LINE
+            }
         }
     }
 }

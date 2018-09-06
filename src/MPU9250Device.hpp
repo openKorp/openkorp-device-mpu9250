@@ -22,7 +22,11 @@
 #include <string>
 #include <vector>
 
+
+#include <eigen3/Eigen/Dense>
+
 #include "opendlv-standard-message-set.hpp"
+#include "calibration.hpp"
 
 
 class MPU9250Device{
@@ -37,6 +41,8 @@ class MPU9250Device{
   opendlv::proxy::PressureReading readAltimeter();
   opendlv::proxy::TemperatureReading readThermometer();
 
+  Calibration ellipsoidFitting(Eigen::MatrixXf const &);
+  
  private:
   enum A_SCALE {
     AFS_2G = 0,
@@ -50,6 +56,26 @@ class MPU9250Device{
     GFS_500DPS,
     GFS_1000DPS,
     GFS_2000DPS
+  };
+  enum A_DLPF {
+    ADLPF_OFF = 0,
+    ADLPF_460,
+    ADLPF_184,
+    ADLPF_92,
+    ADLPF_41,
+    ADLPF_20,
+    ADLPF_10,
+    ADLPF_5 
+  };
+  enum G_DLPF {
+    GDLPF_OFF = 0,
+    GDLPF_250,
+    GDLPF_184,
+    GDLPF_92,
+    GDLPF_41,
+    GDLPF_20,
+    GDLPF_10,
+    GDLPF_5
   };
 
   enum M_SCALE {
@@ -69,35 +95,41 @@ class MPU9250Device{
   void initMpu();
   std::vector<float> getGyroCalibration();
   std::vector<float> getAccCalibration();
+  Eigen::Vector3f sampleAccelerometer();
 
-  void saveGyroCalibration(std::vector<float> const &);
-  void loadGyroCalibration();
-  void setGyroCalibration(std::vector<float> const &);
-  void setAccCalibration(std::vector<float> const &);
-  void setAscale(A_SCALE);
-  float getAscale();
-  void setGscale(G_SCALE);
-  float getGscale(bool);
+  int8_t setGyroCalibration();
+  int8_t setAccCalibration();
+  void setAccFullScaleRange(A_SCALE const &);
+  void setGyroFullScaleRange(G_SCALE const &);
+  void setAccDigitalLowPassFilter(A_DLPF const &);
+  void setGyroDigitalLowPassFilter(G_DLPF const &);
 
   int16_t m_deviceFile;
   std::string m_addressType;
   std::vector<uint8_t> m_instrumentAdress;
+  Calibration m_accCal;
+  Calibration m_gyroCal;
+  Calibration m_magCal;
   std::string m_accCalFile;
   std::string m_gyroCalFile;
   std::string m_magCalFile;
+  // Specify sensor full scale
+  A_SCALE m_afsr;
+  G_SCALE m_gfsr;
+  float m_accConversion;
+  float m_gyroConversion;
+  A_DLPF m_adlpf;
+  G_DLPF m_gdlpf;
 
-  float const ACCEL_SENSITIVITY = 16384; // = 16384 LSB/g
-  float const GYRO_SENSITIVITY  = 131;   // = 131 LSB/degrees/sec
+  // float const ACCEL_SENSITIVITY = 16384; // = 16384 LSB/g
+  // float const GYRO_SENSITIVITY  = 131;   // = 131 LSB/degrees/sec
 
   uint8_t const MPU9250_ADDRESS = 0x68;
   uint8_t const AK8963_ADDRESS = 0x76;
-  // Specify sensor full scale
-  uint8_t m_gscale = GFS_250DPS;
-  uint8_t m_ascale = AFS_2G;
   // Choose either 14-bit or 16-bit magnetometer resolution
-  uint8_t m_mscale = MFS_16BITS;
+  uint8_t m_mfsr;
   // 2 for 8 Hz, 6 for 100 Hz continuous magnetometer data read
-  uint8_t m_mmode = M_100HZ;
+  uint8_t m_mmode;
 };
 
 namespace MPU9250 {
