@@ -17,6 +17,7 @@
 
 #include <ncurses.h>
 #include <memory>
+#include <sstream>
 
 #include "cluon-complete.hpp"
 #include "opendlv-standard-message-set.hpp"
@@ -53,6 +54,21 @@ int32_t main(int32_t argc, char **argv) {
   }
   auto atFrequency{[&imu, &ID, &VERBOSE, &od4]() -> bool
     {
+      opendlv::proxy::AccelerationReading accreading = imu->readAccelerometer();
+      opendlv::proxy::AngularVelocityReading gyroreading = imu->readGyroscope();
+      opendlv::proxy::TemperatureReading tempreading = imu->readThermometer();
+      opendlv::proxy::MagneticFieldReading magreading = imu->readMagnetometer();
+      opendlv::proxy::PressureReading altreading = imu->readAltimeter();
+
+      std::stringstream ss;
+      ss << "Acceleration: " << accreading.accelerationX() << ", \t" << accreading.accelerationY() << ", \t" << accreading.accelerationZ() << "\n";
+      ss << "Magneting: " << magreading.magneticFieldX() << ", \t" << magreading.magneticFieldY() << ", \t" << magreading.magneticFieldZ() << "\n";
+      ss << "Gyroscope: " << gyroreading.angularVelocityX() << ", \t" << gyroreading.angularVelocityY() << ", \t" << gyroreading.angularVelocityZ() << "\n";
+      ss << "TemperatureReading: " << tempreading.temperature() << "\n";
+      ss << "Pressure: " << altreading.pressure() << "\n";
+
+      mvprintw(1,1, ss.str().c_str());
+      refresh();
       return true;
     }};
 
