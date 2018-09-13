@@ -1,0 +1,7 @@
+version: '2'
+
+services:
+  mpu9250:
+    image: openkorp/openkorp-device-mpu9250-multi:latest
+    network: host
+    command: "./openkorp-device-mpu9250 --cid=111 --freq=1 --dev=/dev/i2c-1 --id=0"

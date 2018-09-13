@@ -41,7 +41,7 @@ class MPU9250Device{
   opendlv::proxy::PressureReading readAltimeter();
   opendlv::proxy::TemperatureReading readThermometer();
 
-  Calibration ellipsoidFitting(Eigen::MatrixXf const &);
+  // Calibration ellipsoidFitting(Eigen::MatrixXf const &);
   
  private:
   enum A_SCALE {

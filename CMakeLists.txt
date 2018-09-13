@@ -114,7 +114,7 @@ include_directories(${Eigen3_INCLUDE_DIRS})
 
 ################################################################################
 # Gather all object code first to avoid double compilation.
-add_library(${PROJECT_NAME}-core OBJECT ${CMAKE_CURRENT_SOURCE_DIR}/src/calibration.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/MPU9250Device.cpp ${CMAKE_BINARY_DIR}/opendlv-standard-message-set.hpp ${CMAKE_BINARY_DIR}/openkorp-message-set.hpp)
+add_library(${PROJECT_NAME}-core OBJECT ${CMAKE_CURRENT_SOURCE_DIR}/src/MPU9250Device.cpp ${CMAKE_BINARY_DIR}/opendlv-standard-message-set.hpp ${CMAKE_BINARY_DIR}/openkorp-message-set.hpp src/calibration.cpp)
 set(LIBRARIES Threads::Threads ${CURSES_LIBRARIES} ${Eigen3_LIBS})
 
 ################################################################################
@@ -124,7 +124,7 @@ target_link_libraries(${PROJECT_NAME} ${LIBRARIES})
 
 ################################################################################
 # Enable unit testing.
-# enable_testing()
+enable_testing()
 add_executable(${PROJECT_NAME}-runner ${CMAKE_CURRENT_SOURCE_DIR}/test/tests-mpu9250.cpp $<TARGET_OBJECTS:${PROJECT_NAME}-core>)
 target_link_libraries(${PROJECT_NAME}-runner ${LIBRARIES})
 add_test(NAME ${PROJECT_NAME}-runner COMMAND ${PROJECT_NAME}-runner)

@@ -66,9 +66,12 @@ int32_t main(int32_t argc, char **argv) {
       ss << "Gyroscope: " << gyroreading.angularVelocityX() << ", \t" << gyroreading.angularVelocityY() << ", \t" << gyroreading.angularVelocityZ() << "\n";
       ss << "TemperatureReading: " << tempreading.temperature() << "\n";
       ss << "Pressure: " << altreading.pressure() << "\n";
-
-      mvprintw(1,1, ss.str().c_str());
-      refresh();
+      if (VERBOSE == 1) {
+        std::cout << ss.str() << std::endl;
+      } else if (VERBOSE == 2) {
+        mvprintw(1,1, ss.str().c_str());
+        refresh();
+      }
       return true;
     }};
 

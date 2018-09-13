@@ -19,12 +19,11 @@ class Calibration
     int8_t loadCalibration(std::string const &);
     std::string toString();
     Eigen::Vector3f applyOffset(Eigen::Vector3f const &) const;
+    void ellipsoidFit(Eigen::MatrixXf const &);
     
 
   private:
     Eigen::Vector3f m_center;
     Eigen::Vector3f m_radius;
     Eigen::Matrix3f m_rotation;
-  
-
 };
