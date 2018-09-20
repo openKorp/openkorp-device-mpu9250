@@ -27,7 +27,7 @@
 // #include <fstream>
 #include <unistd.h>
 
-#include <eigen3/Eigen/SVD>
+#include <eigen/SVD>
 
 #include "MPU9250Device.hpp"
 

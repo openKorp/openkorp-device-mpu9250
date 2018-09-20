@@ -23,7 +23,7 @@
 #include <vector>
 
 
-#include <eigen3/Eigen/Dense>
+#include <eigen/Dense>
 
 #include "opendlv-standard-message-set.hpp"
 #include "calibration.hpp"

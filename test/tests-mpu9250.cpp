@@ -21,7 +21,7 @@
 #include "cluon-complete.hpp"
 #include "opendlv-standard-message-set.hpp"
 
-#include <eigen3/Eigen/Dense>
+#include <eigen/Dense>
 #include "calibration.hpp"
 // #include "MPU9250Device.hpp"
 

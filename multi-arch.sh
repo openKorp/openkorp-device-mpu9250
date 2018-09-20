@@ -1,27 +1,33 @@
 #!/bin/sh
 
 VERSION=$1
+PROJECTNAME=${PWD##*/}
+ORGANISATION=openkorp
 
-docker build -t openkorp/openkorp-device-mpu2950-aarch64:$VERSION -f Dockerfile.aarch64 . &
-docker build -t openkorp/openkorp-device-mpu2950-amd64:$VERSION -f Dockerfile.amd64 . &
-docker build -t openkorp/openkorp-device-mpu2950-armhf:$VERSION -f Dockerfile.armhf .
+docker build -t $ORGANISATION/$PROJECTNAME-armhf:$VERSION -f Dockerfile.armhf . &
+docker build -t $ORGANISATION/$PROJECTNAME-aarch64:$VERSION -f Dockerfile.aarch64 . &
+docker build -t $ORGANISATION/$PROJECTNAME-amd64:$VERSION -f Dockerfile.amd64 . &
 
-docker push openkorp/openkorp-device-mpu2950-aarch64:$VERSION 
-docker push openkorp/openkorp-device-mpu2950-amd64:$VERSION 
-docker push openkorp/openkorp-device-mpu2950-armhf:$VERSION 
+wait
+
+docker push $ORGANISATION/$PROJECTNAME-armhf:$VERSION &
+docker push $ORGANISATION/$PROJECTNAME-aarch64:$VERSION & 
+docker push $ORGANISATION/$PROJECTNAME-amd64:$VERSION  &
+
+wait 
 
 cat <<EOF >/tmp/multi.yml
-image: openkorp/openkorp-device-mpu2950-multi:$VERSION
+image: $ORGANISATION/$PROJECTNAME-multi:$VERSION
 manifests:  
-  - image: openkorp/openkorp-device-mpu2950-amd64:$VERSION
+  - image: $ORGANISATION/$PROJECTNAME-amd64:$VERSION
     platform:
       architecture: amd64
       os: linux
-  - image: openkorp/openkorp-device-mpu2950-armhf:$VERSION
+  - image: $ORGANISATION/$PROJECTNAME-armhf:$VERSION
     platform:
       architecture: arm
       os: linux
-  - image: openkorp/openkorp-device-mpu2950-aarch64:$VERSION
+  - image: $ORGANISATION/$PROJECTNAME-aarch64:$VERSION
     platform:
       architecture: arm64
       os: linux

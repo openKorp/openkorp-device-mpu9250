@@ -100,17 +100,13 @@ add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/openkorp-message-set.hpp
 
 # Add current build directory as include directory as it contains generated files.
 include_directories(SYSTEM ${CMAKE_BINARY_DIR})
+include_directories(SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 ################################################################################
 # Find ncurse
 find_package( Curses REQUIRED )
 include_directories( ${CURSES_INCLUDE_DIRS} )
-
-################################################################################
-# Eigen
-find_package(Eigen3 3.3 REQUIRED )
-include_directories(${Eigen3_INCLUDE_DIRS})
 
 ################################################################################
 # Gather all object code first to avoid double compilation.

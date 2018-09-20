@@ -14,18 +14,18 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 FROM docker.io/project31/aarch64-alpine-qemu:3.5-7 as builder
-LABEL authors="Björnborg Nguyen"
 RUN [ "cross-build-start" ]
 
-RUN cat /etc/apk/repositories && \
-    echo http://dl-4.alpinelinux.org/alpine/v3.7/main > /etc/apk/repositories && \
-    echo http://dl-4.alpinelinux.org/alpine/v3.7/community >> /etc/apk/repositories
+RUN echo http://dl-4.alpinelinux.org/alpine/edge/main > /etc/apk/repositories && \
+    echo http://dl-4.alpinelinux.org/alpine/edge/community >> /etc/apk/repositories && \
+    echo http://dl-4.alpinelinux.org/alpine/edge/testing >> /etc/apk/repositories
 
 RUN apk update && \
+    apk add --upgrade apk-tools && \
     apk --no-cache add \
         cmake \
         g++ \
-        upx \
+        # upx \ causes semgation fault
         ccache \
         ncurses-dev \
         git \
@@ -33,22 +33,19 @@ RUN apk update && \
         linux-headers
 
 RUN apk add libcluon --no-cache --repository https://chrberger.github.io/libcluon/alpine/v3.7 --allow-untrusted
-
-RUN git clone https://github.com/eigenteam/eigen-git-mirror.git && \
-      mkdir eigen-git-mirror/build && cd eigen-git-mirror/build && \
-      cmake .. && \
-      make && \
-      make install
       
-ADD . /opt/sources
+ADD src /opt/sources/src
+ADD thirdparty /opt/sources/thirdparty
+ADD test /opt/sources/test
+ADD CMakeLists.txt /opt/sources
 
 WORKDIR /opt/sources
 
-RUN rm -rf build && \
-    mkdir build && \
+RUN mkdir build && \
     cd build && \
     cmake -D CMAKE_BUILD_TYPE=Release -D CMAKE_INSTALL_PREFIX=/tmp/openkorp-device-mpu9250-dest .. && \
-    make -j4  && make install && upx -9 /tmp/openkorp-device-mpu9250-dest/bin/openkorp-device-mpu9250
+    make -j4  && make install 
+    # && upx -9 /tmp/openkorp-device-mpu9250-dest/bin/openkorp-device-mpu9250
 
 RUN [ "cross-build-end" ]
 
@@ -63,4 +60,4 @@ RUN apk update && \
 RUN [ "cross-build-end" ]
 WORKDIR /usr/bin
 COPY --from=builder /tmp/openkorp-device-mpu9250-dest/ /usr/
-CMD ["/usr/bin/openkorp-device-bbblue-prugw"]
+CMD ["/usr/bin/openkorp-device-mpu9250"]
