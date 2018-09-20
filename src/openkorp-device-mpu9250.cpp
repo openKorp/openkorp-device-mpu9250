@@ -32,7 +32,7 @@ int32_t main(int32_t argc, char **argv) {
       0 == commandlineArguments.count("id")){
     std::cerr << argv[0] << " interfaces to the MPU9250 IMU on I2C bus." << std::endl;
     std::cerr << "Usage:   " << argv[0] << " --cid=<OpenDaVINCI session> --freq=<runtime frequency> --dev=<I2C bus> --id=<id> [--verbose] [--calibrate]" << std::endl;
-    std::cerr << "Example: " << argv[0] << " --cid=111 --freq=10 --dev=/dev/i2c-0 --id=0"  << std::endl;
+    std::cerr << "Example: " << argv[0] << " --cid=111 --freq=10 --dev=/dev/i2c-0 --id=0 --verbose=1"  << std::endl;
     return 1;
   } 
 
