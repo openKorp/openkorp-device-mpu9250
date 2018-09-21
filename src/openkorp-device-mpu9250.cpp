@@ -16,7 +16,6 @@
  */
 
 #include <ncurses.h>
-#include <memory>
 #include <sstream>
 
 #include "cluon-complete.hpp"

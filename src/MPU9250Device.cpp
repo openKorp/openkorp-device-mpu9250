@@ -22,12 +22,9 @@
 #include <linux/i2c-dev.h>
 #include <sys/ioctl.h>
 
-#include <cmath>
 #include <iostream>
-// #include <fstream>
 #include <unistd.h>
 
-#include <eigen/SVD>
 
 #include "MPU9250Device.hpp"
 
