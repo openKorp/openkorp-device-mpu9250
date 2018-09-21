@@ -115,13 +115,13 @@ void MPU9250Device::initMpu()
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG2, MPU9250::BIT_FIFO_SIZE_1024 | 0x8});
   m_accCal = Calibration(m_accCalFile);
   m_gyroCal = Calibration(m_gyroCalFile);
-  setAccCalibration();
-  setGyroCalibration();
+  // setAccCalibration();
+  // setGyroCalibration();
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::SMPLRT_DIV, 0x00});
   setAccFullScaleRange(m_afsr);
   setGyroFullScaleRange(m_gfsr);
-  setAccDigitalLowPassFilter(m_adlpf);
-  setGyroDigitalLowPassFilter(m_gdlpf);
+  // setAccDigitalLowPassFilter(m_adlpf);
+  // setGyroDigitalLowPassFilter(m_gdlpf);
 }
 
 

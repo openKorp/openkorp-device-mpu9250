@@ -1,3 +1,7 @@
+#pragma once
+#ifndef calibration_h
+#define calibration_h
+
 #include <eigen/Dense>
 #include <string>
 
@@ -27,3 +31,5 @@ class Calibration
     Eigen::Vector3f m_radius;
     Eigen::Matrix3f m_rotation;
 };
+
+#endif
