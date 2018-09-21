@@ -17,11 +17,9 @@ FROM docker.io/project31/aarch64-alpine-qemu:3.5-7 as builder
 RUN [ "cross-build-start" ]
 
 RUN echo http://dl-4.alpinelinux.org/alpine/edge/main > /etc/apk/repositories && \
-    echo http://dl-4.alpinelinux.org/alpine/edge/community >> /etc/apk/repositories && \
-    echo http://dl-4.alpinelinux.org/alpine/edge/testing >> /etc/apk/repositories
+    echo http://dl-4.alpinelinux.org/alpine/edge/community >> /etc/apk/repositories
 
 RUN apk update && \
-    apk add --upgrade apk-tools && \
     apk --no-cache add \
         cmake \
         g++ \

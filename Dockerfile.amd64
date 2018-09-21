@@ -14,10 +14,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 FROM alpine:edge AS builder
-RUN echo http://dl-4.alpinelinux.org/alpine/edge/testing >> /etc/apk/repositories
-
 RUN apk update && \
-    apk add --upgrade apk-tools && \
     apk --no-cache add \
         cmake \
         g++ \

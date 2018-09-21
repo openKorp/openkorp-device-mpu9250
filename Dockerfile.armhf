@@ -18,7 +18,6 @@ RUN [ "cross-build-start" ]
 RUN echo http://dl-4.alpinelinux.org/alpine/edge/testing >> /etc/apk/repositories
 
 RUN apk update && \
-    apk add --upgrade apk-tools@edge && \
     apk --no-cache add \
         cmake \
         g++ \

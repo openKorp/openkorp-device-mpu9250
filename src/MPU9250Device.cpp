@@ -308,9 +308,9 @@ Eigen::Vector3f MPU9250Device::sampleAccelerometer()
       // int16_t gyroSampl[3] = {0,0,0};
       rawData = i2cReadRegister(std::vector<uint8_t>{MPU9250::FIFO_R_W}, 6);
 
-      samples(i, 0) = (int16_t) (((int16_t)rawData.at(0) << 8) | rawData.at(1));
-      samples(i, 1) = (int16_t) (((int16_t)rawData.at(2) << 8) | rawData.at(3));
-      samples(i, 2) = (int16_t) (((int16_t)rawData.at(4) << 8) | rawData.at(5));
+      samples(i, 0) = (int16_t) (((uint16_t)rawData.at(0) << 8) | rawData.at(1));
+      samples(i, 1) = (int16_t) (((uint16_t)rawData.at(2) << 8) | rawData.at(3));
+      samples(i, 2) = (int16_t) (((uint16_t)rawData.at(4) << 8) | rawData.at(5));
 
     }
     for (uint8_t i = 0; i < 3; i++) {
@@ -374,10 +374,10 @@ opendlv::proxy::AccelerationReading MPU9250Device::readAccelerometer()
 
   float const c = m_accConversion;
 
-  int16_t x = (((int16_t)rawData[0] << 8) | rawData[1] );
-  int16_t y = (((int16_t)rawData[2] << 8) | rawData[3] );
-  int16_t z = (((int16_t)rawData[4] << 8) | rawData[5] );
-
+  int16_t x = (((uint16_t)rawData.at(0) << 8) | rawData.at(1) );
+  int16_t y = (((uint16_t)rawData.at(2) << 8) | rawData.at(3) );
+  int16_t z = (((uint16_t)rawData.at(4) << 8) | rawData.at(5) );
+  std::cout << "Conversion: " << c << std::endl;
   opendlv::proxy::AccelerationReading reading;
   reading.accelerationX(x*c);
   reading.accelerationY(y*c);
@@ -414,9 +414,9 @@ opendlv::proxy::AngularVelocityReading MPU9250Device::readGyroscope()
 
   float const c = m_gyroConversion;
 
-  int16_t x = (((int16_t)rawData[0] << 8) | rawData[1] );
-  int16_t y = (((int16_t)rawData[2] << 8) | rawData[3] );
-  int16_t z = (((int16_t)rawData[4] << 8) | rawData[5] );
+  int16_t x = (int16_t) (((int16_t)rawData[0] << 8) | rawData[1] );
+  int16_t y = (int16_t) (((int16_t)rawData[2] << 8) | rawData[3] );
+  int16_t z = (int16_t) (((int16_t)rawData[4] << 8) | rawData[5] );
   
   opendlv::proxy::AngularVelocityReading reading;
   reading.angularVelocityX(x*c);
