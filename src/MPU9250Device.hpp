@@ -93,8 +93,11 @@ class MPU9250Device{
   void i2cWriteRegister(std::vector<uint8_t> const &);
   std::vector<uint8_t> i2cReadRegister(std::vector<uint8_t> const &, uint8_t const &);
   int8_t i2cAccessDevice(uint8_t const);
-  void resetMpu();
   void initMpu();
+  void resetMpu();
+  void initMagnetometer();
+  void terminateMagnetometer();
+
   std::vector<float> getGyroCalibration();
   std::vector<float> getAccCalibration();
   Eigen::Vector3f sampleAccelerometer();
@@ -122,16 +125,18 @@ class MPU9250Device{
   float m_gyroConversion;
   A_DLPF m_adlpf;
   G_DLPF m_gdlpf;
+  // Choose either 14-bit or 16-bit magnetometer resolution
+  uint8_t m_mfsr;
+  // 2 for 8 Hz, 6 for 100 Hz continuous magnetometer data read
+  uint8_t m_mmode;
+
+  float const GRAVITY_CONST = 9.80665f;
 
   // float const ACCEL_SENSITIVITY = 16384; // = 16384 LSB/g
   // float const GYRO_SENSITIVITY  = 131;   // = 131 LSB/degrees/sec
 
   uint8_t const MPU9250_ADDRESS = 0x68;
   uint8_t const AK8963_ADDRESS = 0x76;
-  // Choose either 14-bit or 16-bit magnetometer resolution
-  uint8_t m_mfsr;
-  // 2 for 8 Hz, 6 for 100 Hz continuous magnetometer data read
-  uint8_t m_mmode;
 };
 
 namespace MPU9250 {

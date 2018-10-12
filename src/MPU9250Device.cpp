@@ -59,6 +59,7 @@ MPU9250Device::MPU9250Device(std::string const &a_deviceName, bool const &a_cali
         << " opened successfully." << std::endl;
   }
   initMpu();
+  // initMagnetometer();
   (void) a_calibrate;
 }
 
@@ -96,6 +97,22 @@ int8_t MPU9250Device::i2cAccessDevice(uint8_t const a_addr)
   return 0;
 }
 
+void MPU9250Device::initMpu()
+{
+  resetMpu();
+  i2cAccessDevice(MPU9250_ADDRESS);
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG2, MPU9250::BIT_FIFO_SIZE_1024 | 0x8});
+  m_accCal = Calibration(m_accCalFile);
+  m_gyroCal = Calibration(m_gyroCalFile);
+  setAccCalibration();
+  setGyroCalibration();
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::SMPLRT_DIV, 0x00});
+  setAccFullScaleRange(m_afsr);
+  setGyroFullScaleRange(m_gfsr);
+  // setAccDigitalLowPassFilter(m_adlpf);
+  // setGyroDigitalLowPassFilter(m_gdlpf);
+}
+
 void MPU9250Device::resetMpu()
 {
   // wake up device
@@ -109,19 +126,19 @@ void MPU9250Device::resetMpu()
   }
 }
 
-void MPU9250Device::initMpu()
+
+void MPU9250Device::initMagnetometer()
 {
-  resetMpu();
-  i2cWriteRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG2, MPU9250::BIT_FIFO_SIZE_1024 | 0x8});
-  m_accCal = Calibration(m_accCalFile);
-  m_gyroCal = Calibration(m_gyroCalFile);
-  // setAccCalibration();
-  // setGyroCalibration();
-  i2cWriteRegister(std::vector<uint8_t>{MPU9250::SMPLRT_DIV, 0x00});
-  setAccFullScaleRange(m_afsr);
-  setGyroFullScaleRange(m_gfsr);
-  // setAccDigitalLowPassFilter(m_adlpf);
-  // setGyroDigitalLowPassFilter(m_gdlpf);
+  i2cAccessDevice(AK8963_ADDRESS);
+  
+
+}
+
+void MPU9250Device::terminateMagnetometer()
+{
+  i2cAccessDevice(AK8963_ADDRESS);
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, MPU9250::MAG_POWER_DN}); 
+
 }
 
 
@@ -267,7 +284,7 @@ std::vector<float> MPU9250Device::getAccCalibration()
       j++;
     }
   }
-  measurementAverage = measurementAverage/16384.0f;
+  measurementAverage = measurementAverage / (32768.0f / 2.0f);
 
 
 
@@ -277,6 +294,7 @@ std::vector<float> MPU9250Device::getAccCalibration()
 
 Eigen::Vector3f MPU9250Device::sampleAccelerometer()
 {
+  i2cAccessDevice(MPU9250_ADDRESS);
   float const DEVIATION_THRESHOLD = 100;
   Eigen::Vector3f mean;
   Eigen::Vector3f deviation;
@@ -326,16 +344,18 @@ int8_t MPU9250Device::setGyroCalibration()
 
   i2cAccessDevice(MPU9250_ADDRESS);
 
+  // todo add contribution of factory calibration. The new settings must be added on top of the factory calibration.
+
   int16_t xOffset = std::lround(offset(0));
   int16_t yOffset = std::lround(offset(1));
   int16_t zOffset = std::lround(offset(2));
 
-  uint8_t xh = (-xOffset/4 >> 8);
-  uint8_t xl = ((-xOffset/4) & 0xFF);
-  uint8_t yh = (-yOffset/4 >> 8);
-  uint8_t yl = ((-yOffset/4) & 0xFF);
-  uint8_t zh = (-zOffset/4 >> 8);
-  uint8_t zl = ((-zOffset/4) & 0xFF);
+  uint8_t xh = (-xOffset/4 >> 8) & 0xFF;
+  uint8_t xl = ((-xOffset/4)     & 0xFF);
+  uint8_t yh = (-yOffset/4 >> 8) & 0xFF;
+  uint8_t yl = ((-yOffset/4)     & 0xFF);
+  uint8_t zh = (-zOffset/4 >> 8) & 0xFF;
+  uint8_t zl = ((-zOffset/4)     & 0xFF);
 
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::XG_OFFSET_H, xh, xl, yh, yl, zh, zl});
 
@@ -349,16 +369,48 @@ int8_t MPU9250Device::setAccCalibration()
 
   i2cAccessDevice(MPU9250_ADDRESS);
 
-  int16_t xOffset = std::lround(offset(0));
-  int16_t yOffset = std::lround(offset(1));
-  int16_t zOffset = std::lround(offset(2));
+  // Convert from m/s -> G (range of 16G)
+  float const CONVERSION = (GRAVITY_CONST * 16.0f / 32768.0f);
 
+  std::vector<uint8_t> data = i2cReadRegister(std::vector<uint8_t>{MPU9250::XA_OFFSET_H}, 6);
+
+  // Load factory calibration to add your own calibration on
+  int16_t xOffsetFactory = (((int16_t) data.at(0) << 7) | (data.at(1) >> 1));
+  int16_t yOffsetFactory = (((int16_t) data.at(2) << 7) | (data.at(3) >> 1));
+  int16_t zOffsetFactory = (((int16_t) data.at(4) << 7) | (data.at(5) >> 1));
+  
+  // Check the masking bit in 16 bit storage
+  uint8_t mask_bit[3] = {0,0,0};
+
+  uint8_t mask = 0x01;
+
+  for (uint8_t i = 0; i < 3; i++) {
+    if (data.at((2*i+1)) & mask) {
+      mask_bit[i] = 0x01;
+    }
+  }
+
+  // std::cout << "Before " << xOffsetFactory << " "  << yOffsetFactory << " "  << zOffsetFactory << std::endl;
+  int16_t xOffset = xOffsetFactory - std::lround(offset(0) / CONVERSION);
+  int16_t yOffset = yOffsetFactory - std::lround(offset(1) / CONVERSION);
+  int16_t zOffset = zOffsetFactory - std::lround(offset(2) / CONVERSION);
+  // std::cout << "After " << xOffset << " "  << yOffset << " "  << zOffset << std::endl;
+
+
+  // Convert back 15bit value into two seperate data fields of 7+8 bits fields and add your masking bit
   uint8_t xh = (xOffset >> 7) & 0xFF;
   uint8_t xl = (xOffset << 1) & 0xFF;
+  xl = xl | mask_bit[0];
   uint8_t yh = (yOffset >> 7) & 0xFF;
   uint8_t yl = (yOffset << 1) & 0xFF;
+  yl = yl | mask_bit[1];
   uint8_t zh = (zOffset >> 7) & 0xFF;
   uint8_t zl = (zOffset << 1) & 0xFF;
+  zl = zl | mask_bit[2];
+
+  // std::cout << "Before " << +data[0] << ", "  << +data[1] << ", "  << +data[2] << ", " << +data[3] << ", " << +data[4] << ", " << +data[5] << std::endl;
+  // std::cout << "After " << +xh << ", "  << +xl << ", "  << +yh << ", " << +yl << ", " << +zh << ", " << +zl << std::endl;
+
 
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::XA_OFFSET_H, xh, xl, yh, yl, zh, zl});
   return 0;
@@ -369,16 +421,16 @@ opendlv::proxy::AccelerationReading MPU9250Device::readAccelerometer()
   i2cAccessDevice(MPU9250_ADDRESS);
   std::vector<uint8_t> rawData = i2cReadRegister(std::vector<uint8_t>{MPU9250::ACCEL_XOUT_H}, 6);
 
-  float const c = m_accConversion;
+  float const CONVERSION = m_accConversion;
 
-  int16_t x = (((uint16_t)rawData.at(0) << 8) | rawData.at(1) );
-  int16_t y = (((uint16_t)rawData.at(2) << 8) | rawData.at(3) );
-  int16_t z = (((uint16_t)rawData.at(4) << 8) | rawData.at(5) );
-  std::cout << "Conversion: " << c << std::endl;
+  int16_t x = (int16_t) (((uint16_t) rawData.at(0) << 8) | rawData.at(1));
+  int16_t y = (int16_t) (((uint16_t) rawData.at(2) << 8) | rawData.at(3));
+  int16_t z = (int16_t) (((uint16_t) rawData.at(4) << 8) | rawData.at(5));
+  // std::cout << "Conversion: " << CONVERSION << std::endl;
   opendlv::proxy::AccelerationReading reading;
-  reading.accelerationX(x*c);
-  reading.accelerationY(y*c);
-  reading.accelerationZ(z*c);
+  reading.accelerationX(x*CONVERSION);
+  reading.accelerationY(y*CONVERSION);
+  reading.accelerationZ(z*CONVERSION);
   return reading;
 }
 
@@ -441,19 +493,19 @@ void MPU9250Device::setAccFullScaleRange(A_SCALE const &a_fsr)
   switch (a_fsr) {
     case AFS_2G:
       val = AFS_2G;
-      m_accConversion = (9.80665f * 2.0f / 32768.0f);
+      m_accConversion = (GRAVITY_CONST * 2.0f / 32768.0f);
       break;
     case AFS_4G:
       val = AFS_4G;
-      m_accConversion = (9.80665f * 4.0f / 32768.0f);
+      m_accConversion = (GRAVITY_CONST * 4.0f / 32768.0f);
       break;
     case AFS_8G:
       val = AFS_8G;
-      m_accConversion = (9.80665f * 8.0f / 32768.0f);
+      m_accConversion = (GRAVITY_CONST * 8.0f / 32768.0f);
       break;
     case AFS_16G:
       val = AFS_16G;
-      m_accConversion = (9.80665f * 16.0f / 32768.0f);
+      m_accConversion = (GRAVITY_CONST * 16.0f / 32768.0f);
       break;
     default:
       m_accConversion = 0.0f;
