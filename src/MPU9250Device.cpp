@@ -485,7 +485,7 @@ opendlv::proxy::MagneticFieldReading MPU9250Device::readMagnetometer()
     float x = (((int16_t)rawData.at(2) << 8) | rawData.at(3) ) * c ;//* m_magSens[1];
     float y = (((int16_t)rawData.at(0) << 8) | rawData.at(1) ) * c ;//* m_magSens[0];
     float z = -(((int16_t)rawData.at(4) << 8) | rawData.at(5) ) * c;// * m_magSens[2];
-    
+    std::cout << "Got data:" << x << ", " << y << ", " << z << std::endl;
     reading.magneticFieldX(x*c);
     reading.magneticFieldY(y*c);
     reading.magneticFieldZ(z*c);
