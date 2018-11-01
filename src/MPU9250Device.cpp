@@ -69,7 +69,7 @@ MPU9250Device::MPU9250Device(std::string const &a_deviceName, bool const &a_cali
 
 MPU9250Device::~MPU9250Device()
 {
-  // terminateMagnetometer();
+  terminateMagnetometer();
   terminateMpu();
 }
 
@@ -122,9 +122,9 @@ void MPU9250Device::terminateMpu()
 {
   i2cAccessDevice(MPU9250_ADDRESS);
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1, MPU9250::H_RESET});
-  sleep(1000);
+  usleep(10000);
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1, MPU9250::MPU_SLEEP});
-  sleep(1000);
+  usleep(10000);
 }
 
 void MPU9250Device::resetMpu()
@@ -145,9 +145,9 @@ void MPU9250Device::initMagnetometer()
 {
   i2cAccessDevice(AK8963_ADDRESS);
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, MPU9250::MAG_POWER_DN});
-  sleep(1000);
+  usleep(10000);;
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, MPU9250::MAG_FUSE_ROM});
-  sleep(1000);
+  usleep(10000);
 
   std::vector<uint8_t> rawData = i2cReadRegister(std::vector<uint8_t>{MPU9250::AK8963_ASAX}, 3);
   
