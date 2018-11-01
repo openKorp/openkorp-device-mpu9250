@@ -156,11 +156,11 @@ void MPU9250Device::initMagnetometer()
   m_magSens[2] = (rawData.at(2)-128)/256.0f + 1.0f;
 
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, MPU9250::MAG_POWER_DN});
-  sleep(1000);
+  usleep(10000);
 
   uint8_t c = MPU9250::MSCALE_16|MPU9250::MAG_CONT_MES_2;
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, c});
-  sleep(1000);
+  usleep(10000);
 
 }
 
@@ -168,7 +168,7 @@ void MPU9250Device::terminateMagnetometer()
 {
   i2cAccessDevice(AK8963_ADDRESS);
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, MPU9250::MAG_POWER_DN});
-  sleep(1000);
+  usleep(10000);
 }
 
 
