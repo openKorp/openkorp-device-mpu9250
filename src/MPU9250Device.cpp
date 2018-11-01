@@ -69,7 +69,7 @@ MPU9250Device::MPU9250Device(std::string const &a_deviceName, bool const &a_cali
 
 MPU9250Device::~MPU9250Device()
 {
-  terminateMagnetometer();
+  // terminateMagnetometer();
   terminateMpu();
 }
 
