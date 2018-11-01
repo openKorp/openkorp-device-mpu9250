@@ -42,7 +42,7 @@ set(CMAKE_EXE_LINKER_FLAGS "-static-libgcc -static-libstdc++")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
     -D_XOPEN_SOURCE=700 \
     -D_FORTIFY_SOURCE=2 \
-    -O2 \
+    -O3 \
     -fstack-protector \
     -fomit-frame-pointer \
     -pipe \
@@ -120,10 +120,10 @@ target_link_libraries(${PROJECT_NAME} ${LIBRARIES})
 
 ################################################################################
 # Enable unit testing.
-enable_testing()
-add_executable(${PROJECT_NAME}-runner ${CMAKE_CURRENT_SOURCE_DIR}/test/tests-mpu9250.cpp $<TARGET_OBJECTS:${PROJECT_NAME}-core>)
-target_link_libraries(${PROJECT_NAME}-runner ${LIBRARIES})
-add_test(NAME ${PROJECT_NAME}-runner COMMAND ${PROJECT_NAME}-runner)
+# enable_testing()
+# add_executable(${PROJECT_NAME}-runner ${CMAKE_CURRENT_SOURCE_DIR}/test/tests-mpu9250.cpp $<TARGET_OBJECTS:${PROJECT_NAME}-core>)
+# target_link_libraries(${PROJECT_NAME}-runner ${LIBRARIES})
+# add_test(NAME ${PROJECT_NAME}-runner COMMAND ${PROJECT_NAME}-runner)
 
 ################################################################################
 # Install executable.
