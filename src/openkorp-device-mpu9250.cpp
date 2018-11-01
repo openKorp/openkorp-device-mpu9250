@@ -61,7 +61,7 @@ int32_t main(int32_t argc, char **argv) {
 
       std::stringstream ss;
       ss << "Acceleration: " << accreading.accelerationX() << ", \t" << accreading.accelerationY() << ", \t" << accreading.accelerationZ() << "\n";
-      ss << "Magnetfield: " << magreading.magneticFieldX() << ", \t" << magreading.magneticFieldY() << ", \t" << magreading.magneticFieldZ() << "\n";
+      ss << "Magneticfield: " << magreading.magneticFieldX() << ", \t" << magreading.magneticFieldY() << ", \t" << magreading.magneticFieldZ() << "\n";
       ss << "Gyroscope: " << gyroreading.angularVelocityX() << ", \t" << gyroreading.angularVelocityY() << ", \t" << gyroreading.angularVelocityZ() << "\n";
       ss << "TemperatureReading: " << tempreading.temperature() << "\n";
       ss << "Pressure: " << altreading.pressure() << "\n";

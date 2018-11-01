@@ -158,8 +158,9 @@ void MPU9250Device::initMagnetometer()
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, MPU9250::MAG_POWER_DN});
   usleep(10000);
 
-  uint8_t c = MPU9250::MSCALE_16|MPU9250::MAG_CONT_MES_2;
-  i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, c});
+  // uint8_t c = MPU9250::MSCALE_16 | MPU9250::MAG_CONT_MES_2;
+  setMagnetometerScale(m_mfsr, m_mmode);
+  // i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, c});
   usleep(10000);
 
 }
@@ -168,7 +169,7 @@ void MPU9250Device::terminateMagnetometer()
 {
   i2cAccessDevice(AK8963_ADDRESS);
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, MPU9250::MAG_POWER_DN});
-  usleep(10000);
+  sleep(1000);
 }
 
 
@@ -467,17 +468,29 @@ opendlv::proxy::AccelerationReading MPU9250Device::readAccelerometer()
 opendlv::proxy::MagneticFieldReading MPU9250Device::readMagnetometer()
 {
   // uint8_t addr = MPU9250_ADDRESS;
-  // i2cAccessDevice(addr);
+  i2cAccessDevice(AK8963_ADDRESS);
   // uint8_t reg = MPU9250::AK8963_XOUT_L;
-  // uint8_t rawData[6];
-  // i2cReadRegister(reg, &rawData[0], 6);
+  std::vector<uint8_t> rawData = i2cReadRegister(std::vector<uint8_t>{MPU9250::AK8963_XOUT_L},7);
+  
 
-  // int16_t x = (((int16_t)rawData[0] << 8) | rawData[1] );
-  // int16_t y = (((int16_t)rawData[2] << 8) | rawData[3] );
-  // int16_t z = (((int16_t)rawData[4] << 8) | rawData[5] );
+  opendlv::proxy::MagneticFieldReading reading;
+  if(rawData.at(6) & MPU9250::MAGNETOMETER_SATURATION) {
+    reading.magneticFieldX(std::nanf(""));
+    reading.magneticFieldY(std::nanf(""));
+    reading.magneticFieldZ(std::nanf(""));
+    return reading;
+  } else {
+    float const c = m_magConversion;
 
-  // opendlv::proxy::MagneticFieldReading magnetometerReading(x,y,z);
-  return opendlv::proxy::MagneticFieldReading();
+    float x = (((int16_t)rawData.at(2) << 8) | rawData.at(3) ) * c * m_magSens[1];
+    float y = (((int16_t)rawData.at(0) << 8) | rawData.at(1) ) * c * m_magSens[0];
+    float z = -(((int16_t)rawData.at(4) << 8) | rawData.at(5) ) * c * m_magSens[2];
+    
+    reading.magneticFieldX(x*c);
+    reading.magneticFieldY(y*c);
+    reading.magneticFieldZ(z*c);
+    return reading;
+  }
 }
 
 opendlv::proxy::PressureReading MPU9250Device::readAltimeter()

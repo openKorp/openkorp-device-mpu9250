@@ -128,9 +128,9 @@ class MPU9250Device{
   A_DLPF m_adlpf;
   G_DLPF m_gdlpf;
   // Choose either 14-bit or 16-bit magnetometer resolution
-  uint8_t m_mfsr;
+  M_SCALE m_mfsr;
   // 2 for 8 Hz, 6 for 100 Hz continuous magnetometer data read
-  uint8_t m_mmode;
+  M_MODE m_mmode;
   float m_magSens[3];
 
   float const GRAVITY_CONST = 9.80665f;
