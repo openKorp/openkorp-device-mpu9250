@@ -62,7 +62,7 @@ MPU9250Device::MPU9250Device(std::string const &a_deviceName, bool const &a_cali
   }
   resetMpu();
   initMpu();
-  initMagnetometer();
+  // initMagnetometer();
   (void) a_calibrate;
 }
 
