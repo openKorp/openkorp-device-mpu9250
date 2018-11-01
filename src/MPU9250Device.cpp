@@ -62,7 +62,7 @@ MPU9250Device::MPU9250Device(std::string const &a_deviceName, bool const &a_cali
   }
   resetMpu();
   initMpu();
-  // initMagnetometer();
+  initMagnetometer();
   (void) a_calibrate;
 }
 
@@ -169,7 +169,7 @@ void MPU9250Device::terminateMagnetometer()
 {
   i2cAccessDevice(AK8963_ADDRESS);
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, MPU9250::MAG_POWER_DN});
-  sleep(1000);
+  usleep(10000);
 }
 
 
