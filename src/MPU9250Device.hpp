@@ -139,7 +139,7 @@ class MPU9250Device{
   // float const GYRO_SENSITIVITY  = 131;   // = 131 LSB/degrees/sec
 
   uint8_t const MPU9250_ADDRESS = 0x68;
-  uint8_t const AK8963_ADDRESS = 0x76;
+  uint8_t const AK8963_ADDRESS = 0x0C;
 };
 
 namespace MPU9250 {
