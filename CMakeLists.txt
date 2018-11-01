@@ -27,7 +27,7 @@ project(openkorp-device-mpu9250)
 # Defining the relevant versions of OpenDLV Standard Message Set and libcluon.
 set(OPENDLV_STANDARD_MESSAGE_SET opendlv-standard-message-set.odvd)
 set(OPENKORP_MESSAGE_SET openkorp-message-set.odvd)
-set(CLUON_COMPLETE cluon-complete-v0.0.101.hpp)
+set(CLUON_COMPLETE cluon-complete-v0.0.114.hpp)
 
 ################################################################################
 # This project requires C++14 or newer.
@@ -120,10 +120,10 @@ target_link_libraries(${PROJECT_NAME} ${LIBRARIES})
 
 ################################################################################
 # Enable unit testing.
-# enable_testing()
-# add_executable(${PROJECT_NAME}-runner ${CMAKE_CURRENT_SOURCE_DIR}/test/tests-mpu9250.cpp $<TARGET_OBJECTS:${PROJECT_NAME}-core>)
-# target_link_libraries(${PROJECT_NAME}-runner ${LIBRARIES})
-# add_test(NAME ${PROJECT_NAME}-runner COMMAND ${PROJECT_NAME}-runner)
+enable_testing()
+add_executable(${PROJECT_NAME}-runner ${CMAKE_CURRENT_SOURCE_DIR}/test/tests-mpu9250.cpp $<TARGET_OBJECTS:${PROJECT_NAME}-core>)
+target_link_libraries(${PROJECT_NAME}-runner ${LIBRARIES})
+add_test(NAME ${PROJECT_NAME}-runner COMMAND ${PROJECT_NAME}-runner)
 
 ################################################################################
 # Install executable.

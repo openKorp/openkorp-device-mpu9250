@@ -24,7 +24,7 @@ RUN apk update && \
         cmake \
         g++ \
         # upx \ causes semgation fault
-        ccache \
+        # ccache \
         ncurses-dev \
         git \
         make \

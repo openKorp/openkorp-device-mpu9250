@@ -22,7 +22,7 @@ RUN apk update && \
         cmake \
         g++ \
         # upx \ causes segmentation fault
-        ccache \
+        # ccache \
         ncurses-dev \
         git \
         make \

@@ -79,7 +79,6 @@ class MPU9250Device{
     GDLPF_10,
     GDLPF_5
   };
-
   enum M_SCALE {
     MFS_14BITS = 0, // 0.6 mG per LSB
     MFS_16BITS      // 0.15 mG per LSB
@@ -95,6 +94,7 @@ class MPU9250Device{
   int8_t i2cAccessDevice(uint8_t const);
   void initMpu();
   void resetMpu();
+  void terminateMpu();
   void initMagnetometer();
   void terminateMagnetometer();
 
@@ -106,6 +106,7 @@ class MPU9250Device{
   int8_t setAccCalibration();
   void setAccFullScaleRange(A_SCALE const &);
   void setGyroFullScaleRange(G_SCALE const &);
+  void setMagnetometerScale(M_SCALE const &, M_MODE const &);
   void setAccDigitalLowPassFilter(A_DLPF const &);
   void setGyroDigitalLowPassFilter(G_DLPF const &);
 
@@ -123,12 +124,14 @@ class MPU9250Device{
   G_SCALE m_gfsr;
   float m_accConversion;
   float m_gyroConversion;
+  float m_magConversion;
   A_DLPF m_adlpf;
   G_DLPF m_gdlpf;
   // Choose either 14-bit or 16-bit magnetometer resolution
   uint8_t m_mfsr;
   // 2 for 8 Hz, 6 for 100 Hz continuous magnetometer data read
   uint8_t m_mmode;
+  float m_magSens[3];
 
   float const GRAVITY_CONST = 9.80665f;
 

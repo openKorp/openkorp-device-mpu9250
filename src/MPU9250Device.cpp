@@ -45,10 +45,12 @@ MPU9250Device::MPU9250Device(std::string const &a_deviceName, bool const &a_cali
     , m_gfsr(MPU9250Device::G_SCALE::GFS_250DPS)
     , m_accConversion(0.0f)
     , m_gyroConversion(0.0f)
+    , m_magConversion(0.0f)
     , m_adlpf(MPU9250Device::A_DLPF::ADLPF_184)
     , m_gdlpf(MPU9250Device::G_DLPF::GDLPF_184)
     , m_mfsr(MPU9250Device::M_SCALE::MFS_14BITS)
     , m_mmode(MPU9250Device::M_MODE::M_100HZ)
+    , m_magSens()
 {
   m_deviceFile = open(a_deviceName.c_str(), O_RDWR);
   if (m_deviceFile < 0) {
@@ -58,14 +60,18 @@ MPU9250Device::MPU9250Device(std::string const &a_deviceName, bool const &a_cali
     std::cout << "[MPU9250] I2C bus " << a_deviceName 
         << " opened successfully." << std::endl;
   }
+  resetMpu();
   initMpu();
-  // initMagnetometer();
+  initMagnetometer();
   (void) a_calibrate;
 }
 
 
 MPU9250Device::~MPU9250Device()
-{}
+{
+  terminateMagnetometer();
+  terminateMpu();
+}
 
 void MPU9250Device::i2cWriteRegister(std::vector<uint8_t> const &a_data)
 {
@@ -99,7 +105,6 @@ int8_t MPU9250Device::i2cAccessDevice(uint8_t const a_addr)
 
 void MPU9250Device::initMpu()
 {
-  resetMpu();
   i2cAccessDevice(MPU9250_ADDRESS);
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG2, MPU9250::BIT_FIFO_SIZE_1024 | 0x8});
   m_accCal = Calibration(m_accCalFile);
@@ -109,8 +114,17 @@ void MPU9250Device::initMpu()
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::SMPLRT_DIV, 0x00});
   setAccFullScaleRange(m_afsr);
   setGyroFullScaleRange(m_gfsr);
-  // setAccDigitalLowPassFilter(m_adlpf);
-  // setGyroDigitalLowPassFilter(m_gdlpf);
+  setAccDigitalLowPassFilter(m_adlpf);
+  setGyroDigitalLowPassFilter(m_gdlpf);
+}
+
+void MPU9250Device::terminateMpu()
+{
+  i2cAccessDevice(MPU9250_ADDRESS);
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1, MPU9250::H_RESET});
+  sleep(1000);
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::PWR_MGMT_1, MPU9250::MPU_SLEEP});
+  sleep(1000);
 }
 
 void MPU9250Device::resetMpu()
@@ -130,15 +144,31 @@ void MPU9250Device::resetMpu()
 void MPU9250Device::initMagnetometer()
 {
   i2cAccessDevice(AK8963_ADDRESS);
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, MPU9250::MAG_POWER_DN});
+  sleep(1000);
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, MPU9250::MAG_FUSE_ROM});
+  sleep(1000);
+
+  std::vector<uint8_t> rawData = i2cReadRegister(std::vector<uint8_t>{MPU9250::AK8963_ASAX}, 3);
   
+  m_magSens[0] = (rawData.at(0)-128)/256.0f + 1.0f;
+  m_magSens[1] = (rawData.at(1)-128)/256.0f + 1.0f;
+  m_magSens[2] = (rawData.at(2)-128)/256.0f + 1.0f;
+
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, MPU9250::MAG_POWER_DN});
+  sleep(1000);
+
+  uint8_t c = MPU9250::MSCALE_16|MPU9250::MAG_CONT_MES_2;
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, c});
+  sleep(1000);
 
 }
 
 void MPU9250Device::terminateMagnetometer()
 {
   i2cAccessDevice(AK8963_ADDRESS);
-  i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, MPU9250::MAG_POWER_DN}); 
-
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, MPU9250::MAG_POWER_DN});
+  sleep(1000);
 }
 
 
@@ -546,6 +576,28 @@ void MPU9250Device::setGyroFullScaleRange(G_SCALE const &a_fsr)
   i2cAccessDevice(MPU9250_ADDRESS);
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::GYRO_CONFIG, val});
 }
+
+void MPU9250Device::setMagnetometerScale(M_SCALE const &a_scale, M_MODE const &a_mode)
+{
+  uint8_t val = 0;
+  switch (a_scale) {
+    case MFS_14BITS:
+      m_magConversion = 4912.0f/8190.0f;
+      val = MPU9250::MSCALE_14;
+      break;
+    case MFS_16BITS:
+      m_magConversion = 4912.0f/32760.0f;
+      val = MPU9250::MSCALE_16;
+      break;
+    default:
+      m_magConversion = 0.0f;
+      return;
+      break;
+  }
+  uint8_t c = val|a_mode;
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, c});
+}
+
 void MPU9250Device::setAccDigitalLowPassFilter(A_DLPF const &a_dlpf)
 {
   uint8_t buf = MPU9250::ACCEL_FCHOICE_1KHZ | MPU9250::BIT_FIFO_SIZE_1024;

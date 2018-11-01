@@ -135,15 +135,15 @@ int8_t Calibration::loadCalibration(std::string const &a_filename)
 
 std::string Calibration::toString() 
 {
-  Eigen::IOFormat CleanFmt(Eigen::FullPrecision, 0, ", ", "\n", "[", "]");
+  // Eigen::IOFormat CleanFmt(Eigen::FullPrecision, 0, ", ", "\n", "[", "]");
   std::stringstream ss;
-  ss << "[Calibration]\n";
-  ss << "Center:\n";
-  ss << m_center.format(CleanFmt) << "\n";
-  ss << "Axis radius:\n";
-  ss << m_radius.format(CleanFmt) << "\n";
-  ss << "Rotation:\n";
-  ss << m_rotation.format(CleanFmt) << "\n";
+  // ss << "[Calibration]\n";
+  // ss << "Center:\n";
+  // ss << m_center.format(CleanFmt) << "\n";
+  // ss << "Axis radius:\n";
+  // ss << m_radius.format(CleanFmt) << "\n";
+  // ss << "Rotation:\n";
+  // ss << m_rotation.format(CleanFmt) << "\n";
 
   return ss.str();
 }
@@ -164,11 +164,7 @@ void Calibration::ellipsoidFit(Eigen::MatrixXf const &a_data)
   Eigen::MatrixXf const p = a_data;
   Eigen::MatrixXf q = p;
   q.conservativeResize(p.rows() + 1, p.cols());
-
-  for(int32_t i = 0; i < q.cols(); i++)
-  {
-    q(q.rows() - 1, i) = 1;
-  }
+  q.row(p.rows()).setOnes();
 
   // int count = 1;
   float err = 1.0f;
@@ -189,12 +185,7 @@ void Calibration::ellipsoidFit(Eigen::MatrixXf const &a_data)
 
     //Find err
     Eigen::MatrixXf u_diff = new_u - u;
-    for (int32_t i = 0; i < u_diff.rows(); i++) {
-        for (int32_t j = 0; j < u_diff.cols(); j++) {
-          u_diff(i, j) *= u_diff(i, j); // Square each element of the matrix
-        }
-    }
-    err = sqrtf(u_diff.sum());
+    err = sqrtf(u_diff.array().square().sum());
     u = new_u;
   }
 
@@ -202,10 +193,9 @@ void Calibration::ellipsoidFit(Eigen::MatrixXf const &a_data)
   Eigen::MatrixXf A = (1.0f / (float) d) * (p * U * p.eval().transpose() - (p * u) * (p * u).eval().transpose()).eval().inverse();
   Eigen::Vector3f center = p * u;
 
-  Eigen::BDCSVD<Eigen::MatrixXf> svd(A, Eigen::ComputeFullU | Eigen:: ComputeFullV);
-  // Eigen::MatrixXf S = svd.singularValues().asDiagonal();
-  Eigen::Vector3f Svec = svd.singularValues();
-  Eigen::Vector3f radius = 1/(Svec.array().sqrt());
+  Eigen::JacobiSVD<Eigen::MatrixXf> svd(A, Eigen::ComputeThinU | Eigen:: ComputeThinV);
+  
+  Eigen::Vector3f radius = 1/(svd.singularValues().array().sqrt());
   Eigen::Matrix3f rotation = svd.matrixV().transpose();
 
 

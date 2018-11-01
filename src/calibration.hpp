@@ -2,7 +2,9 @@
 #ifndef calibration_h
 #define calibration_h
 
-#include <eigen/Dense>
+#include <eigen/Core>
+#include <eigen/SVD>
+#include <eigen/LU>
 #include <string>
 
 class Calibration
