@@ -97,6 +97,7 @@ class MPU9250Device{
   void terminateMpu();
   void initMagnetometer();
   void terminateMagnetometer();
+  void setBypassMode(bool const);
 
   std::vector<float> getGyroCalibration();
   std::vector<float> getAccCalibration();
@@ -132,6 +133,7 @@ class MPU9250Device{
   // 2 for 8 Hz, 6 for 100 Hz continuous magnetometer data read
   M_MODE m_mmode;
   float m_magSens[3];
+  bool m_dmp;
 
   float const GRAVITY_CONST = 9.80665f;
 

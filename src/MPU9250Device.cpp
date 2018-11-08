@@ -48,9 +48,10 @@ MPU9250Device::MPU9250Device(std::string const &a_deviceName, bool const &a_cali
     , m_magConversion(0.0f)
     , m_adlpf(MPU9250Device::A_DLPF::ADLPF_184)
     , m_gdlpf(MPU9250Device::G_DLPF::GDLPF_184)
-    , m_mfsr(MPU9250Device::M_SCALE::MFS_14BITS)
+    , m_mfsr(MPU9250Device::M_SCALE::MFS_16BITS)
     , m_mmode(MPU9250Device::M_MODE::M_100HZ)
     , m_magSens()
+    , m_dmp(false)
 {
   m_deviceFile = open(a_deviceName.c_str(), O_RDWR);
   if (m_deviceFile < 0) {
@@ -116,6 +117,7 @@ void MPU9250Device::initMpu()
   setGyroFullScaleRange(m_gfsr);
   setAccDigitalLowPassFilter(m_adlpf);
   setGyroDigitalLowPassFilter(m_gdlpf);
+  // setBypassMode(true);
 }
 
 void MPU9250Device::terminateMpu()
@@ -144,6 +146,7 @@ void MPU9250Device::resetMpu()
 void MPU9250Device::initMagnetometer()
 {
 
+  setBypassMode(true);
   // We need to enable the bypass mode in the mpu9250 so we can establisht the communication.
 
   i2cAccessDevice(AK8963_ADDRESS);
@@ -175,6 +178,26 @@ void MPU9250Device::terminateMagnetometer()
   usleep(10000);
 }
 
+void MPU9250Device::setBypassMode(bool const a_flag) 
+{
+  // std::cout << "Trying to bypass" << std::endl;
+  i2cAccessDevice(MPU9250_ADDRESS);
+  uint8_t buffer = 0;
+  if (m_dmp) {
+    buffer |= MPU9250::FIFO_EN_BIT;
+  }
+  if (!a_flag) {
+    buffer |= MPU9250::I2C_MST_EN;
+  }
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::USER_CTRL, buffer});
+  usleep(3000);
+  buffer = MPU9250::LATCH_INT_EN | MPU9250::INT_ANYRD_CLEAR | MPU9250::ACTL_ACTIVE_LOW;
+  if (a_flag) {
+    buffer |= MPU9250::BYPASS_EN;
+  } 
+  i2cWriteRegister(std::vector<uint8_t>{MPU9250::INT_PIN_CFG, buffer});
+  // std::cout << "Successful bypass" << std::endl;
+}
 
 std::vector<float> MPU9250Device::getGyroCalibration()
 {
@@ -470,9 +493,7 @@ opendlv::proxy::AccelerationReading MPU9250Device::readAccelerometer()
 
 opendlv::proxy::MagneticFieldReading MPU9250Device::readMagnetometer()
 {
-  // uint8_t addr = MPU9250_ADDRESS;
   i2cAccessDevice(AK8963_ADDRESS);
-  // uint8_t reg = MPU9250::AK8963_XOUT_L;
   std::vector<uint8_t> rawData = i2cReadRegister(std::vector<uint8_t>{MPU9250::AK8963_XOUT_L},7);
   
 
@@ -485,13 +506,13 @@ opendlv::proxy::MagneticFieldReading MPU9250Device::readMagnetometer()
   } else {
     float const c = m_magConversion;
 
-    float x = (((int16_t)rawData.at(2) << 8) | rawData.at(3) ) * c * m_magSens[1];
-    float y = (((int16_t)rawData.at(0) << 8) | rawData.at(1) ) * c * m_magSens[0];
-    float z = -(((int16_t)rawData.at(4) << 8) | rawData.at(5) ) * c * m_magSens[2];
+    float x = (int16_t)(((int16_t)rawData.at(3) << 8) | rawData.at(2) ) * c * m_magSens[1];
+    float y = (int16_t)(((int16_t)rawData.at(1) << 8) | rawData.at(0) ) * c * m_magSens[0];
+    float z = -(int16_t)(((int16_t)rawData.at(5) << 8) | rawData.at(4) ) * c * m_magSens[2];
     // std::cout << "Got data:" << x << ", " << y << ", " << z << std::endl;
-    reading.magneticFieldX(x*c);
-    reading.magneticFieldY(y*c);
-    reading.magneticFieldZ(z*c);
+    reading.magneticFieldX(x);
+    reading.magneticFieldY(y);
+    reading.magneticFieldZ(z);
     return reading;
   }
 }
