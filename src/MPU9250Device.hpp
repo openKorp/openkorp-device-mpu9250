@@ -144,7 +144,6 @@ class MPU9250Device{
 
 namespace MPU9250 {
 enum RegAddr {
-  //I2C bus and address definitions for Robotics Cape
   IMU_ADDR = 0x68,
   IMU_BUS = 2,
 

@@ -143,6 +143,9 @@ void MPU9250Device::resetMpu()
 
 void MPU9250Device::initMagnetometer()
 {
+
+  // We need to enable the bypass mode in the mpu9250 so we can establisht the communication.
+
   i2cAccessDevice(AK8963_ADDRESS);
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::AK8963_CNTL, MPU9250::MAG_POWER_DN});
   usleep(10000);;
