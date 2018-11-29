@@ -92,14 +92,14 @@ class MPU9250Device{
   void i2cWriteRegister(std::vector<uint8_t> const &);
   std::vector<uint8_t> i2cReadRegister(std::vector<uint8_t> const &, uint8_t const &);
   int8_t i2cAccessDevice(uint8_t const);
-  void initMpu();
+  void initMpu(bool const);
   void resetMpu();
   void terminateMpu();
-  void initMagnetometer();
+  void initMagnetometer(bool const);
   void terminateMagnetometer();
   void setBypassMode(bool const);
 
-  std::vector<float> getGyroCalibration();
+  void getGyroCalibration();
   std::vector<float> getAccCalibration();
   Eigen::Vector3f sampleAccelerometer();
 

@@ -62,9 +62,9 @@ MPU9250Device::MPU9250Device(std::string const &a_deviceName, bool const &a_cali
         << " opened successfully." << std::endl;
   }
   resetMpu();
-  initMpu();
-  initMagnetometer();
-  (void) a_calibrate;
+  initMpu(a_calibrate);
+  initMagnetometer(a_calibrate);
+  // (void) a_calibrate;
 }
 
 
@@ -104,12 +104,18 @@ int8_t MPU9250Device::i2cAccessDevice(uint8_t const a_addr)
   return 0;
 }
 
-void MPU9250Device::initMpu()
+void MPU9250Device::initMpu(bool const a_calibrate)
 {
+  (void) a_calibrate;
   i2cAccessDevice(MPU9250_ADDRESS);
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::ACCEL_CONFIG2, MPU9250::BIT_FIFO_SIZE_1024 | 0x8});
   m_accCal = Calibration(m_accCalFile);
   m_gyroCal = Calibration(m_gyroCalFile);
+  if (a_calibrate) {
+    getGyroCalibration();
+    m_gyroCal.saveCalibration(m_gyroCalFile);
+
+  }
   setAccCalibration();
   setGyroCalibration();
   i2cWriteRegister(std::vector<uint8_t>{MPU9250::SMPLRT_DIV, 0x00});
@@ -143,9 +149,9 @@ void MPU9250Device::resetMpu()
 }
 
 
-void MPU9250Device::initMagnetometer()
+void MPU9250Device::initMagnetometer(bool const a_calibrate)
 {
-
+  (void) a_calibrate;
   setBypassMode(true);
   // We need to enable the bypass mode in the mpu9250 so we can establisht the communication.
 
@@ -199,10 +205,15 @@ void MPU9250Device::setBypassMode(bool const a_flag)
   // std::cout << "Successful bypass" << std::endl;
 }
 
-std::vector<float> MPU9250Device::getGyroCalibration()
+void MPU9250Device::getGyroCalibration()
 {
   i2cAccessDevice(MPU9250_ADDRESS);
-  std::cout << "[MPU9250] Starting calibration gyroscope...\n";
+  std::cout << "[MPU9250] Starting calibration gyroscope in ..\n";
+
+  for (uint8_t i = 3; i > 0; i--) {
+    std::cout << "[MPU9250] " << std::to_string(i) << std::endl;
+    sleep(1);
+  }
   resetMpu();
 
   std::vector<uint8_t> rawData;
@@ -227,7 +238,7 @@ std::vector<float> MPU9250Device::getGyroCalibration()
 
   //Settings done
   
-  // float const gyroSens  = (250.0f / 32768.0f * static_cast<float>(M_PI) / 180.0f);
+  float const gyroSens  = 250.0f / 32768.0f * static_cast<float>(M_PI) / 180.0f;
 
   bool calibrate = true;
 
@@ -241,7 +252,7 @@ std::vector<float> MPU9250Device::getGyroCalibration()
 
     i2cWriteRegister(std::vector<uint8_t>{MPU9250::USER_CTRL, 0x40});
     i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, MPU9250::FIFO_GYRO_X_EN | MPU9250::FIFO_GYRO_Y_EN | MPU9250::FIFO_GYRO_Z_EN});
-    usleep(1000000);
+    usleep(400000);
 
     i2cWriteRegister(std::vector<uint8_t>{MPU9250::FIFO_EN, 0x00});
     
@@ -266,6 +277,7 @@ std::vector<float> MPU9250Device::getGyroCalibration()
       x(i) = (int16_t) (((int16_t)rawData.at(0) << 8) | rawData.at(1));
       y(i) = (int16_t) (((int16_t)rawData.at(2) << 8) | rawData.at(3));
       z(i) = (int16_t) (((int16_t)rawData.at(4) << 8) | rawData.at(5));
+  
 
     }
     xOffset = x.mean();
@@ -278,22 +290,22 @@ std::vector<float> MPU9250Device::getGyroCalibration()
     calibrate = false;
 
     if (xDeviation > DEVIATION_THRESHOLD || yDeviation > DEVIATION_THRESHOLD || zDeviation > DEVIATION_THRESHOLD) {
-      std::cout << "[MPU9250] Deviation too high: " << xDeviation << ", " 
-          << yDeviation << ", " << zDeviation << ".\n" 
+      std::cout << "[MPU9250] Deviation too high: " << xDeviation*gyroSens << ", " 
+          << yDeviation*gyroSens << ", " << zDeviation*gyroSens << ".\n" 
           << "Recalibrating..." << std::endl;
       calibrate = true;
     }
     if(std::abs(xOffset) > OFFSET_THRESHOLD ||  std::abs(yOffset) > OFFSET_THRESHOLD ||  std::abs(zOffset) > OFFSET_THRESHOLD) {
-      std::cout << "[MPU9250] Offset too high: " << xOffset << ", " 
-          << yOffset << ", " << zOffset << ".\n" 
+      std::cout << "[MPU9250] Offset too high: " << xOffset*gyroSens << ", " 
+          << yOffset*gyroSens << ", " << zOffset*gyroSens << ".\n" 
           << "Recalibrating..." << std::endl;
       calibrate = true;
     }
         
   }
-  std::cout << "[MPU9250] Gyro calibration successful, found bias: " << xOffset << ", " 
-      << yOffset << ", " << zOffset << "." << std::endl;
-  return std::vector<float>{xOffset, yOffset, zOffset};
+  std::cout << "[MPU9250] Gyro calibration successful, found bias: " << xOffset*gyroSens << ", " 
+      << yOffset*gyroSens << ", " << zOffset*gyroSens << "." << std::endl;
+  m_gyroCal.setCenter(Eigen::Vector3f{xOffset*gyroSens, yOffset*gyroSens, zOffset*gyroSens});
 }
 
 std::vector<float> MPU9250Device::getAccCalibration()
@@ -398,14 +410,16 @@ Eigen::Vector3f MPU9250Device::sampleAccelerometer()
 int8_t MPU9250Device::setGyroCalibration()
 {
   Eigen::Vector3f offset = m_gyroCal.getCenter();
+  float const gyroSens  = 250.0f / 32768.0f * static_cast<float>(M_PI) / 180.0f;
+
+  offset /= gyroSens;
 
   i2cAccessDevice(MPU9250_ADDRESS);
-
-  // todo add contribution of factory calibration. The new settings must be added on top of the factory calibration.
 
   int16_t xOffset = std::lround(offset(0));
   int16_t yOffset = std::lround(offset(1));
   int16_t zOffset = std::lround(offset(2));
+  std::cout << "Offset " << std::to_string(xOffset) << " "  << std::to_string(yOffset) << " "  << std::to_string(zOffset) << std::endl;
 
   uint8_t xh = (-xOffset/4 >> 8) & 0xFF;
   uint8_t xl = ((-xOffset/4)     & 0xFF);
@@ -423,7 +437,6 @@ int8_t MPU9250Device::setGyroCalibration()
 int8_t MPU9250Device::setAccCalibration()
 {
   Eigen::Vector3f offset = m_accCal.getCenter();
-
   i2cAccessDevice(MPU9250_ADDRESS);
 
   // Convert from m/s -> G (range of 16G)

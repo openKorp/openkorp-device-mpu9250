@@ -135,15 +135,15 @@ int8_t Calibration::loadCalibration(std::string const &a_filename)
 
 std::string Calibration::toString() 
 {
-  // Eigen::IOFormat CleanFmt(Eigen::FullPrecision, 0, ", ", "\n", "[", "]");
+  Eigen::IOFormat CleanFmt(Eigen::FullPrecision, 0, ", ", "\n", "[", "]");
   std::stringstream ss;
-  // ss << "[Calibration]\n";
-  // ss << "Center:\n";
-  // ss << m_center.format(CleanFmt) << "\n";
-  // ss << "Axis radius:\n";
-  // ss << m_radius.format(CleanFmt) << "\n";
-  // ss << "Rotation:\n";
-  // ss << m_rotation.format(CleanFmt) << "\n";
+  ss << "[Calibration]\n";
+  ss << "Center:\n";
+  ss << m_center.format(CleanFmt) << "\n";
+  ss << "Axis radius:\n";
+  ss << m_radius.format(CleanFmt) << "\n";
+  ss << "Rotation:\n";
+  ss << m_rotation.format(CleanFmt) << "\n";
 
   return ss.str();
 }
