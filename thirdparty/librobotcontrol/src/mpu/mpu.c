@@ -91,6 +91,7 @@ static int packet_len;
 static pthread_t imu_interrupt_thread;
 static int thread_running_flag;
 static void (*dmp_callback_func)()=NULL;
+static void (*dmp_callback_func_arg)()=NULL;
 static void (*tap_callback_func)(int dir, int cnt)=NULL;
 static double mag_factory_adjust[3];
 static double mag_offsets[3];
@@ -957,6 +958,7 @@ int rc_mpu_initialize_dmp(rc_mpu_data_t *data, rc_mpu_config_t conf)
 	data_ptr->tap_detected=0;
 	imu_shutdown_flag = 0;
 	dmp_callback_func=NULL;
+	dmp_callback_func_arg=NULL;
 	tap_callback_func=NULL;
 
 	// start the thread
@@ -1832,7 +1834,7 @@ void* __dmp_interrupt_handler(__attribute__ ((unused)) void* ptr)
 			first_run = 0;
 		}
 		else if(last_read_successful){
-			if(dmp_callback_func!=NULL) dmp_callback_func();
+			if(dmp_callback_func!=NULL) dmp_callback_func(dmp_callback_func_arg);
 			// signals that a measurement is available to blocking function
 			pthread_cond_broadcast(&read_condition);
 			// additionally call tap callback if one was received
@@ -1881,13 +1883,14 @@ void* __dmp_interrupt_handler(__attribute__ ((unused)) void* ptr)
  *
  * @return     0 on success, -1 on failure
  */
-int rc_mpu_set_dmp_callback(void (*func)(void))
+int rc_mpu_set_dmp_callback(void(*func)(void*),void* func_arg)
 {
-	if(func==NULL){
+	if(func==NULL || func_arg==NULL){
 		fprintf(stderr,"ERROR: trying to assign NULL pointer to dmp_callback_func\n");
 		return -1;
 	}
 	dmp_callback_func = func;
+	dmp_callback_func_arg = func_arg;
 	return 0;
 }
 

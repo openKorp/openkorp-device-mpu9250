@@ -376,7 +376,7 @@ int rc_mpu_initialize_dmp(rc_mpu_data_t* data, rc_mpu_config_t conf);
  *
  * @return     0 on success or -1 on failure.
  */
-int rc_mpu_set_dmp_callback(void (*func)(void));
+int rc_mpu_set_dmp_callback(void(*callback)(void*),void*);
 
 
 /**
