@@ -43,8 +43,8 @@ int32_t main(int32_t argc, char** argv) {
     std::cerr << argv[0] << " interfaces to the mpu9250 imu sensor."
               << std::endl;
     std::cerr << "Usage:   " << argv[0]
-              << " --cid=<conference id> [--verbose=<[0-9]>]" << std::endl;
-    std::cerr << "Example: " << argv[0] << " --cid=111 --verbose=2"
+              << " --cid=<conference id>" << std::endl;
+    std::cerr << "Example: " << argv[0] << " --cid=111"
               << std::endl;
     return 1;
   }
