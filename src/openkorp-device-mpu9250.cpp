@@ -28,9 +28,9 @@
 
 // bus for Robotics Cape and BeagleboneBlue is 2, interrupt pin is on gpio3.21
 // change these for your platform
-#define I2C_BUS 2
-#define GPIO_INT_PIN_CHIP 3
-#define GPIO_INT_PIN_PIN 21
+// #define I2C_BUS 2
+// #define GPIO_INT_PIN_CHIP 3
+// #define GPIO_INT_PIN_PIN 21
 
 static rc_mpu_data_t data;
 
@@ -48,6 +48,9 @@ int32_t main(int32_t argc, char** argv) {
               << std::endl;
     return 1;
   }
+  int32_t const I2C_BUS = 2;
+  int32_t const GPIO_INT_PIN_CHIP = 3;
+  int32_t const GPIO_INT_PIN_PIN = 21;
 
   // start with default config and modify based on options
   rc_mpu_config_t conf = rc_mpu_default_config();
@@ -82,7 +85,7 @@ int32_t main(int32_t argc, char** argv) {
   // now set up the imu for dmp interrupt operation
   if (rc_mpu_initialize_dmp(&data, conf)) {
     printf("rc_mpu_initialize_failed\n");
-    return -1;
+    return 1;
   }
   // write labels for what data will be printed and associate the interrupt
   // function to print data immediately after the header.
@@ -98,6 +101,7 @@ int32_t main(int32_t argc, char** argv) {
         .z(static_cast<float>(data.fused_quat[QUAT_Z]));
     od4.send(quaternionMsg);
   }};
+
   // Work around for lambda functions in legacy C programs
   // https://bannalia.blogspot.com/2016/07/passing-capturing-c-lambda-functions-as.html
   auto HelperCbFunc = [](void* arg) {  // note thunk is captureless
@@ -107,13 +111,11 @@ int32_t main(int32_t argc, char** argv) {
   rc_mpu_set_dmp_callback(HelperCbFunc, &SendQuaternionMsg);
   // now just wait, print_data() will be called by the interrupt
 
-  while (1) {
-    rc_usleep(100000);
+  while (od4.isRunning()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   }
 
   // shut things down
   rc_mpu_power_off();
-  // printf("\n");
-  // fflush(stdout);
   return 0;
 }
